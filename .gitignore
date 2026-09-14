@@ -1,0 +1,10 @@
+bin/
+obj/
+__pycache__/
+*.pyc
+test_*/
+_ar_out/
+*_ar/
+tools/
+.build/
+*.user

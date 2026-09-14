@@ -1,0 +1,22 @@
+# verify_target — the reproducible test target for AutoReaktör
+#
+# Build:   dotnet publish -c Release -o out
+# Protect (with .NET Reactor 7.5 demo console, from its install dir):
+#
+#   dotNET_Reactor.Console.exe -file <path>\verify_target.dll ^
+#     -necrobit 1 -stringencryption 1 -antitamp 1 -antidebug 1 ^
+#     -control_flow 1 -flow_level 9 -obfuscation 1 -resourceencryption 1 ^
+#     -compression 1 -suppressildasm 1 -hide_calls 1 -nodialog -q
+#
+# (drop -necrobit/-hide_calls and set -flow_level 5 for the milder build A)
+#
+# Then:    python autoreaktor.py <dir-with-protected-file> --deep
+# And:     dotnet run -- <...>\verify_target_Slayed.dll   (from proof_loader/)
+#
+# Expected proof output (verified 2026-09-14, Reactor 7.5.0.0 demo):
+#   type: Class0, method: Main
+#   --- invoking Main(dump) ---
+#   hello from test target
+#   DH-VERIFY-PLAINTEXT-MARKER-7F3A
+#   DH-VERIFY-SECRET-<hex>
+#   exit: 0
