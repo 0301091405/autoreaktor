@@ -8,3 +8,10 @@ _ar_out/
 tools/
 .build/
 *.user
+# v3: no protected binaries, no rebuild outputs, no dumps in the repo
+v3/test-nbdump/
+v3/test-rebuild/
+v3/blob-analysis/
+v3/nbhook.py
+v3/nbwalk/dump_*
+v3/nbwalk/*.txt

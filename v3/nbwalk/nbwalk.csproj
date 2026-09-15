@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>nbwalk</AssemblyName>
+    <Prefer32Bit>true</Prefer32Bit>
+  </PropertyGroup>
+</Project>
