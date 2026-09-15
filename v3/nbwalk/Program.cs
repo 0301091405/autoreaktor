@@ -77,22 +77,42 @@ class NBWalk {
                 } catch {}
             }
         }
-        // policyCreatorDic: Dictionary<int,int> — token eslesme tablosu
-        var authenticator = SafeTypes(asm).FirstOrDefault(x => x.FullName != null && x.FullName.Contains("AuthenticatorState"));
-        if (authenticator != null) {
-            var dicField = authenticator.GetField("policyCreatorDic", BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Static);
-            if (dicField != null) {
-                var dic = dicField.GetValue(null);
-                var sbd = new StringBuilder();
-                foreach (var entry in (System.Collections.IEnumerable)dic) {
-                    var t2 = entry.GetType();
-                    var k = t2.GetProperty("Key").GetValue(entry);
-                    var v2 = t2.GetProperty("Value").GetValue(entry);
-                    sbd.AppendLine(k + " -> " + v2);
+        // policyCreatorDic — STRUCTURAL lookup: obfuscated names break the 7.3
+        // hardcoded "AuthenticatorState.policyCreatorDic" probe. The field is
+        // the ONLY static Dictionary<int,int> in the runtime type, so find it by
+        // shape: closed generic IDictionary with Int32 key + Int32 value.
+        Type authenticator = null;
+        FieldInfo dicField = null;
+        foreach (var t in SafeTypes(asm)) {
+            if (t == null) continue;
+            FieldInfo[] fs;
+            try { fs = t.GetFields(BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Static); } catch { continue; }
+            foreach (var f in fs) {
+                object dv = null;
+                try { dv = f.GetValue(null); } catch { continue; }
+                if (dv == null) continue;
+                // exact Dictionary<int,int> shape test
+                if (dv.GetType().IsGenericType &&
+                    dv.GetType().GetGenericTypeDefinition() == typeof(System.Collections.Generic.Dictionary<,>) &&
+                    dv.GetType().GetGenericArguments()[0] == typeof(int) &&
+                    dv.GetType().GetGenericArguments()[1] == typeof(int) &&
+                    ((System.Collections.ICollection)dv).Count > 0) {
+                    authenticator = t; dicField = f;
+                    W("[DICSHP] " + t.FullName + "::" + f.Name + " count=" + ((System.Collections.ICollection)dv).Count);
                 }
-                File.WriteAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(a[1])), "policyCreatorDic.txt"), sbd.ToString());
-                W("[DUMPED] policyCreatorDic.txt");
             }
+        }
+        if (dicField != null) {
+            var dic = dicField.GetValue(null);
+            var sbd = new StringBuilder();
+            foreach (var entry in (System.Collections.IEnumerable)dic) {
+                var t2 = entry.GetType();
+                var k = t2.GetProperty("Key").GetValue(entry);
+                var v2 = t2.GetProperty("Value").GetValue(entry);
+                sbd.AppendLine(k + " -> " + v2);
+            }
+            File.WriteAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(a[1])), "policyCreatorDic.txt"), sbd.ToString());
+            W("[DUMPED] policyCreatorDic.txt (structural, " + authenticator.FullName + "::" + dicField.Name + ")");
         }
 
         File.WriteAllText(a[1], sb.ToString());
