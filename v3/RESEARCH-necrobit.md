@@ -12,14 +12,14 @@ Method: pure Reflection harvest (nbwalk) + Krypton.Runner dynamic-dump cross-mat
    Dumped to policyCreatorDic.txt via nbwalk.
 3. The delegate targets are DynamicMethods the Reactor runtime emits at
    module-ctor time. Krypton.Runner's DynamicMethod capture harvests them:
-   **204 entries, full IL**, each 1-7 instructions (basic-block fragmentation —
+   **204 entries, full IL**, each 1-7 instructions (basic-block fragmentation  - 
    NecroBit chains tiny DynamicMethods rather than emitting one body).
 4. Cross-match: **201/201 policyCreatorDic keys == dump SourceField tokens**
    (3 extras are BCL lambdas: ValueTaskAwaiter, ManualResetValueTaskSource).
-   This is the complete NecroBit inventory for the target — nothing missing.
+   This is the complete NecroBit inventory for the target - nothing missing.
 5. Bodies do NOT surface via:
    - Hashtable dump (DumpHashtableBodies sees 0 rows even after 766
-     PrepareMethod calls — the body cache is not a static IDictionary)
+     PrepareMethod calls - the body cache is not a static IDictionary)
    - getJit vtable swap (vtable[0] stays 0x72f104bc = clrjit+0x704bc for
      20+ s; Reactor 7.3 does not hook the ICorJitCompiler vtable)
    - Frida inline hook on compileMethod (races the module-ctor; inline
@@ -45,5 +45,5 @@ nbrebuild (planned): dnlib patcher
 - getJit caller = clr.dll+0xe6fe8 (single call site), vtable unchanged after.
 - creatorPolicyItems 1940 bytes = 9 UTF-16 blobs: DI exception strings
   ("button1", "register", "textBox1", "textBox2", "AmbiguousConstructorException",
-  ...) — evidence Reactor runtime-decrypts string tables into static fields,
+  ...) - evidence Reactor runtime-decrypts string tables into static fields,
   harvestable via plain Reflection (no JIT hook needed for THOSE).
