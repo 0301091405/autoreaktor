@@ -1,3 +1,4 @@
+*.dmp
 bin/
 obj/
 __pycache__/
@@ -21,3 +22,4 @@ nbhost_dump.dmp
 v3/multi-target/sample.exe
 v3/multi-target/t2/sample.exe
 v3/multi-target/t3/sample.exe
+r3_md_*.bin
