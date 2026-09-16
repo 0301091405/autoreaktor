@@ -16,3 +16,8 @@ v3/nbhook.py
 v3/nbwalk/dump_*
 v3/nbwalk/*.txt
 nbhost_dump.dmp
+
+# packed test binaries stay local-only (login string embeds a personal marker)
+v3/multi-target/sample.exe
+v3/multi-target/t2/sample.exe
+v3/multi-target/t3/sample.exe

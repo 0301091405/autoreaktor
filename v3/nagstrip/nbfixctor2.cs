@@ -153,7 +153,7 @@ class NbFixCtor2 {
                 }
             }
         }
-        // NULL-OPERAND İÇEREN METOTLARI EUTHANIZE ET (t3b v2):
+        // NULL-OPERAND İÇEREN METOTLARI FORCE-RET YAP (t3b v2):
         // Tip silmek "Non-Static Global Method" verdi (module ref koptu).
         // Bunun yerine: null-operand'lı her METOT govdesini "ret" yap ve
         // static+public yap — token yerinde kalir, null'lar yok olur,
@@ -317,7 +317,7 @@ class NbFixCtor2 {
         }
         Console.WriteLine($"nag kapatildi: {nagKilled}");
 
-        // v17: ZORLA-EUTHANIZE — rcheck'in null-operand listesinin TAMAMI
+        // v17: ZORLA-FORCE-RET — rcheck'in null-operand listesinin TAMAMI
         // (18 metot, t3b). hasNull kosulu KALDIRILDI: dnlib yazimi null
         // operand'i kendi urettigi token'la dolduruyor, yazim SONRASI
         // hasNull artik true YAKALAMIYOR. Liste isim bazli.
