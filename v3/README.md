@@ -72,3 +72,14 @@ Tuts4You ".NET Reactor v7.3" unpackme (whoknows, June 2025).
 | `v3/test-rebuild/` | verification harness tools (IL dump, subst audit, injectors) |
 
 AutoReaktör: MIT. v3 tools: MIT.
+
+## Multi-target T-strip (t1–t7) — layer-combination proof
+
+`multi-target/T-MATRIX.md` — same-source samples packed with every .NET Reactor 7.5
+layer combination (NecroBit / +VM / +cflow / +antidebug+antiildasm+merge /
++compression+Reflection-Compat), plus the real-world strip (t6/t7).
+**All five solved with live GUI proof** — the t3 11-stage chain (nbfixctor2 v30→v41e)
+was then **parametrized** (v39b/v38b/v41) and solved t4 and t5 zero-touch.
+Key mechanisms: same-thread cctor reentrans (init moved to global cctor head),
+NecroBit entry cut from ALL ctors (incl. compiler-generated), Main rewritten by
+recycling original MemberRefs, ctor Text+Visible for form visibility.

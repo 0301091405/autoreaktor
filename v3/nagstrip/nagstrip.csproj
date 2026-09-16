@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AssemblyName>nagstrip</AssemblyName>
+    <StartupObject>NbFixCtor2</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="dnlib" Version="3.3.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="rcheck.cs" />
+    <Compile Remove="dcheck.cs" />
+    <Compile Remove="dcheck2.cs" />
+    <Compile Remove="nagstrip.cs" />
+    <Compile Remove="nagstrip2.cs" />
+    <Compile Remove="nagstrip3.cs" />
+    <Compile Remove="nagstrip4.cs" />
+    <Compile Remove="nagstrip5.cs" />
+    <Compile Remove="roundtrip.cs" />
+    <Compile Remove="roundtrip2.cs" />
+    <Compile Remove="nbfixctor.cs" />
+    <Compile Remove="qcheck.cs" />
+    <Compile Remove="jittest.cs" />
+    <Compile Remove="restest.cs" />
+    <Compile Remove="restest2.cs" />
+    <Compile Remove="tlist.cs" />
+  </ItemGroup>
+</Project>
