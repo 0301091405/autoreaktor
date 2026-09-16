@@ -15,3 +15,4 @@ v3/blob-analysis/
 v3/nbhook.py
 v3/nbwalk/dump_*
 v3/nbwalk/*.txt
+nbhost_dump.dmp
