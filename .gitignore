@@ -23,3 +23,9 @@ v3/multi-target/sample.exe
 v3/multi-target/t2/sample.exe
 v3/multi-target/t3/sample.exe
 r3_md_*.bin
+# third-party protected binaries stay local-only
+v3/multi-target/real-targets/c3/patch_the_login.exe
+v3/multi-target/real-targets/c1/*.exe
+v3/multi-target/real-targets/c2/*.exe
+v3/multi-target/real-targets/c4/*.exe
+v3/multi-target/real-targets/c5/*.exe
