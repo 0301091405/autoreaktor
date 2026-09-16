@@ -334,7 +334,7 @@ class NbFixCtor2 {
             "jIu1fxq0ljXptt0Teaq", "T6EMmqqYYpp87BARchF",
             "bY0V8gqFt6wiWLEo6Q5", "LuDGM6qZqntdkFQoFrt",
         };
-        int euthanized = 0;
+        int forceRetCount = 0;
         var allTypes = mod.GetTypes().ToList();
         var gmod = mod.GlobalType;
         if (gmod != null && !allTypes.Contains(gmod)) allTypes.Add(gmod);
@@ -353,10 +353,10 @@ class NbFixCtor2 {
                 }
                 m.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
                 m.Body.KeepOldMaxStack = true;
-                euthanized++;
+                forceRetCount++;
             }
         }
-        Console.WriteLine($"euthanize metot: {euthanized}");
+        Console.WriteLine($"force-ret metot: {forceRetCount}");
 
         // v18: yazim-oncesi null-operand kurtarma — forceKill/ham-inject
         // DISINDAKI metotlardaki null call/field'lara GECICI dummy token

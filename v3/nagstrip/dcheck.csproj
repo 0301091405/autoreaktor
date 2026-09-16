@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>dcheck</AssemblyName>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="dnlib" Version="3.3.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="nagstrip.cs" />
+    <Compile Remove="nagstrip2.cs" />
+    <Compile Remove="nagstrip3.cs" />
+    <Compile Remove="nagstrip4.cs" />
+    <Compile Remove="nagstrip5.cs" />
+    <Compile Remove="roundtrip.cs" />
+    <Compile Remove="roundtrip2.cs" />
+    <Compile Remove="nbfixctor.cs" />
+    <Compile Remove="nbfixctor2.cs" />
+    <Compile Remove="rcheck.cs" />
+  </ItemGroup>
+</Project>
