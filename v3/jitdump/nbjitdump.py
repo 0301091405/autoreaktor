@@ -44,8 +44,11 @@ def corflags_of(path):
     magic = struct.unpack_from("<H", d, opt)[0]
     ddoff = opt + (96 if magic == 0x10B else 112)
     cdir_rva = struct.unpack_from("<I", d, ddoff + 14 * 8)[0]
-    if not cdir_rva or cdir_rva >= len(d):
+    if not cdir_rva:
         return None, False
+    # cdir_rva VIRTUAL address — dosya boyutuyla karsilastirma YANLIS:
+    # kucuk dll'lerde RVA > filesize olabilir (bolum alignment). Bolum
+    # cozumlemesi asagida; burada sadece 0 kontrolu dogru (g5 bug fix).
     nsec = struct.unpack_from("<H", d, pe + 6)[0]
     opt_size = struct.unpack_from("<H", d, pe + 20)[0]
     sec_tab = pe + 24 + opt_size
@@ -148,6 +151,11 @@ def main():
     env = dict(os.environ)
     env["NB_DLL"] = str(dll)
     env["JITDUMP_DIR"] = str(out)
+    # tiered-inline kirici: Magic gibi kucuk metotlar ctor'a inlinelanmadan
+    # ayri JIT girisi olarak dump'a duser (g5). NB_NOINLINE=1 ile aktif.
+    if os.environ.get("NB_NOINLINE") == "1":
+        env["COMPlus_JitNoInline"] = "1"
+        print("[bilgi] COMPlus_JitNoInline=1 — tiered inline kapali")
     # calistirilabilir sec: hedef .dll ise apphost .exe'sini bul
     run_tgt = tgt
     if tgt.suffix.lower() == ".dll":
