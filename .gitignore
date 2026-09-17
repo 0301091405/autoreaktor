@@ -43,3 +43,8 @@ t1v44.exe
 t4v44.exe
 findtamper.exe
 jitdump2/
+v3/multi-target/t1/t1-restored.exe
+v3/multi-target/real-targets/t4y/t4y75-restored*.exe
+v3/multi-target/real-targets/t4y/t4y75-iso.exe
+v3/multi-target/real-targets/t4y/t4y75-nb2-rt.exe
+v3/multi-target/real-targets/t4y/t4y75-patched.exe
