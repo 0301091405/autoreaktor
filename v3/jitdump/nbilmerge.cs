@@ -165,7 +165,9 @@ class NBIlMerge {
                     // metot imzasindan + govde buyuklugundan degil,
                     // ham IL'den mini tarama:
                     if (localOps.Count > 0) {
-                        int nLocals = CountLocalsFromCil(bodies[i]);
+                        string mwv = Environment.GetEnvironmentVariable("NB_MAXWRITE");
+                    if (mwv != null && restored >= int.Parse(mwv)) { skipped++; continue; }
+                    int nLocals = CountLocalsFromCil(bodies[i]);
                         if (nLocals < 1) nLocals = 1; // ldloc.0 en az 1 local gerektirir
                         for (int li = newBody.Variables.Count; li < nLocals; li++)
                             newBody.Variables.Add(new dnlib.DotNet.Emit.Local(mod.CorLibTypes.Object));
@@ -203,6 +205,8 @@ class NBIlMerge {
             }
         }
         Console.WriteLine("GERCEK YAZILAN metot: " + restored + " | atlanan: " + skipped);
+        string mw = Environment.GetEnvironmentVariable("NB_MAXWRITE");
+        if (mw != null) Console.WriteLine("NB_MAXWRITE=" + mw + " (limit modu)");
 
         // null-operand yazim kurtarmasi (NB_NOSIL=1 ile atla)
         bool noSil2 = Environment.GetEnvironmentVariable("NB_NOSIL") == "1";
