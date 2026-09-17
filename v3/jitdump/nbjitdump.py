@@ -115,8 +115,16 @@ def main():
     # --- hedef siniflandirmasi (genellik icin kritik) ---
     flags, managed = corflags_of(tgt)
     if not managed:
-        print("[!] yonetilmeyen exe (no CLR) — JIT dump kapsam disi")
-        return 3
+        # .NET Core/5+ apphost exe: native gorunumlu stub, yanindaki
+        # <stem>.dll gercek yonetilen modul. DLL varsa rotayi ona cevir.
+        stem = tgt.with_suffix(".dll")
+        if stem.exists():
+            print(f"[bilgi] apphost — yonetilen modul: {stem.name}")
+            tgt = stem.resolve()
+            flags, managed = corflags_of(tgt)
+        if not managed:
+            print("[!] yonetilmeyen exe (no CLR) — JIT dump kapsam disi")
+            return 3
     if flags is not None and not (flags & 0x2) and not (flags & 0x10000):
         # 32BITREQUIRED(0x2) yok VE 32BITPREF(0x10000) yok = AnyCPU
         # -> 64-bit OS'ta x64 surec; x86 DLL asla yuklenmez (t1
@@ -140,7 +148,17 @@ def main():
     env = dict(os.environ)
     env["NB_DLL"] = str(dll)
     env["JITDUMP_DIR"] = str(out)
-    p = subprocess.Popen([str(launcher), f'"{str(tgt)}"'], cwd=str(tgt.parent), env=env)
+    # calistirilabilir sec: hedef .dll ise apphost .exe'sini bul
+    run_tgt = tgt
+    if tgt.suffix.lower() == ".dll":
+        host = tgt.with_suffix(".exe")
+        if host.exists():
+            run_tgt = host.resolve()
+            print(f"[bilgi] calistirilan: apphost {run_tgt.name}")
+        else:
+            print("[!] DLL icin apphost exe yok — dotnet host gerekli")
+            return 3
+    p = subprocess.Popen([str(launcher), f'"{str(run_tgt)}"'], cwd=str(tgt.parent), env=env)
     try:
         p.wait(timeout=args.wait)
         print(f"hedef cikti rc={p.returncode}")

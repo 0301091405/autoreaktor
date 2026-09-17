@@ -87,10 +87,17 @@ static std::uint32_t resolveRealToken(void* comp, void* ftn) {
     bool useVt = (mode && strcmp(mode, "vt") == 0);
 #endif
     if (useVt && comp) {
+        // slot: NB_VTSLOT (default 112 — coreclr .NET 8 corinfo.h
+        // sayimi: ICorStaticInfo icinde getMethodDefFromMethod
+        // oncesi 112 pure-virtual). Framework 4.x icin dogru
+        // slot BILINMIYOR (105 crash kanitli) — ENV ile ver.
+        int slot = 112;
+        const char* vts = getenv("NB_VTSLOT");
+        if (vts) slot = atoi(vts);
         __try {
             void** vt = *(void***)comp;
             std::uint32_t (__stdcall *pGet)(void*) =
-                (std::uint32_t (__stdcall*)(void*))vt[105];
+                (std::uint32_t (__stdcall*)(void*))vt[slot];
             if (pGet) {
                 std::uint32_t r = pGet(ftn);
                 if (r > 0 && r < 0x00FFFFFF) tok = 0x06000000 | r;
