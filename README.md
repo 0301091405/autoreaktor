@@ -10,9 +10,27 @@ de4dot stops at "Unknown Obfuscator" on modern Reactor builds and its rc=0 does 
 
 Chaining in the naive order (de4dot → Krypton) breaks Krypton's resource parser. The working order, verified end-to-end on a real-world target, is:
 
-    original → NETReactorSlayer → Slayed.exe → Krypton (KRYPTON_FORCE_VM_MAP=0x75=Call)
+    original → NETReactorSlayer → Slayed.exe → Krypton
 
-On the Tuts4You ".NET Reactor v7.3" challenge this recovers **3/3 virtualized methods fully** — including the 2,852-instruction one — where Krypton alone stalls with "5 VM instructions are still unknown". The single unknown opcode 0x75 is a `Call` that Krypton's own semantic validator prunes over a 1/152 operand edge case; the `KRYPTON_FORCE_VM_MAP` env override (an upstream feature) pins it.
+On the Tuts4You ".NET Reactor v7.3" challenge this recovers **3/3 virtualized methods fully** — including the 2,852-instruction one — where Krypton alone stalls with "5 VM instructions are still unknown". (The 0x75→Call pin that the old revision exported automatically is now REMOVED from the pipeline: VM opcode bytes are randomized per protected build, so a pipeline-level pin is target-specific tuning that silently breaks other builds. If a build genuinely stalls on a tie, export KRYPTON_FORCE_VM_MAP yourself for that one target.)
+
+## Stage 4 (new): universal NecroBit body recovery — the JIT dump route
+
+Static strippers die on modern NecroBit because the CIL bodies never exist decrypted on disk. The route that does not care: hook `ICorJitCompiler::compileMethod` in clrjit.dll inside the target process and snapshot `CORINFO_METHOD_INFO::ILCode` at the moment NecroBit has just decrypted it for the JIT.
+
+    v3/jitdump/clrjit_hook.cpp   x86 + x64 VMT hook DLL (early APC injection, deferred install thread)
+    v3/jitdump/nbjit_launch.c    suspended CreateProcess + QueueUserAPC(LoadLibraryA) launcher (built per-target bitness)
+    v3/jitdump/nbjitdump.py      orchestrator: detects target machine type, builds matching launcher, runs, reports
+    v3/jitdump/nbilmerge.cs      write-back stage: loads dumped bodies, null-operand write-rescue, dnlib rewrite
+
+Proof (real-world targets, not samples):
+
+| Target | hook | bodies captured | total CIL |
+|---|---|---|---|
+| Tuts4You ".NET Reactor v7.5.9.1" (Apr 2026, NecroBit + custom anti-tamper) | HOOK-OK | 238 | 7,060 bytes |
+| Tuts4You ".NET Reactor v7.3" (embedded DLLs + CV) | HOOK-OK | 66 | 1,925 bytes |
+
+Honest limits of the current stage: dumped bodies are keyed by JIT order (real metadata-token resolution is stubbed and opt-in via NB_REALTOKEN=1 — the ICorJitInfo slot offset is not verified, so it stays off), the merge stage currently proves body transport rather than full write-back, and NecroBit builds that skip the clrjit path entirely (e.g. dotqw 7.x, whose HOOK-OK marker shows an unhooked clrjit vtable — no NecroBit JIT shim present) legitimately dump 0 bodies. The anti-tamper-vs-init interlock that nbfixctor2 v44 exposed experimentally (killing the "tampered" throw kills the initializer → NRE) is exactly why the JIT route exists: it bypasses the check/init question entirely instead of patching it.
 
 ## Pipeline
 
