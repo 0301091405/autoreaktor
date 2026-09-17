@@ -7,7 +7,13 @@ using dnlib.DotNet;
 using dnlib.DotNet.Emit;
 using dnlib.DotNet.Writer;
 
-class NbFixCtor2 {
+class nbfixctor2 {
+    // v45 yardimcisi: WinForms Form tipi imzasi — corlib'den degil
+    // System.Windows.Forms asmref'inden kur
+    static dnlib.DotNet.TypeRef formRef45(dnlib.DotNet.ModuleDef mod) {
+        var wf = mod.GetAssemblyRefs().FirstOrDefault(a => a.Name == "System.Windows.Forms");
+        return new dnlib.DotNet.TypeRefUser(mod, "System.Windows.Forms", "Form", wf);
+    }
     static int Main(string[] args) {
         if (args.Length < 2) { Console.WriteLine("nbfixctor2 <in> <out>"); return 1; }
         var mod = ModuleDefMD.Load(args[0]);
@@ -335,7 +341,43 @@ gcc.Body.Instructions.Clear();
                     if (im.Name == "Run") run = im;
                 }
             }
-            if (evs == null || run == null) { Console.WriteLine("v41: orijinal Main refs yok"); }
+            if (evs == null || run == null) {
+                // v45: MAX korumada cflow Main'in icine gomulur —
+                // EnableVisualStyles/Run MemberRef'leri dispatch VM
+                // icinde kalir, gorunmez. Ama ctor YOK OLMAZ (form
+                // tipinde .ctor her zaman durur). Temiz WinForms
+                // akisini MemberRef'leri ELLE kurarak yaz:
+                // System.Windows.Forms.Application::Run(Form).
+                var wfAsm45 = mod.GetAssemblyRefs().FirstOrDefault(a => a.Name == "System.Windows.Forms");
+                if (wfAsm45 != null) {
+                    var appRef45 = new TypeRefUser(mod, "System.Windows.Forms", "Application", wfAsm45);
+                    // STATIC metotlar: CreateStatic — CreateInstance thisptr ekler,
+                    // MissingMethodException'in koku (v45b dersi)
+                    var evs45 = new MemberRefUser(mod, "EnableVisualStyles",
+                        MethodSig.CreateStatic(mod.CorLibTypes.Void), appRef45);
+                    var sctrd45 = new MemberRefUser(mod, "SetCompatibleTextRenderingDefault",
+                        MethodSig.CreateStatic(mod.CorLibTypes.Void, mod.CorLibTypes.Boolean), appRef45);
+                    var run45 = new MemberRefUser(mod, "Run",
+                        MethodSig.CreateStatic(mod.CorLibTypes.Void, new TypeSig[] { new ClassSig(formRef45(mod)) }), appRef45);
+                    var sform45 = main.DeclaringType;
+                    var ctor45 = sform45.Methods.FirstOrDefault(m => m.Name == ".ctor");
+                    if (ctor45 != null) {
+                        main.Body.ExceptionHandlers.Clear();
+                        main.Body.Instructions.Clear();
+                        main.Body.Variables.Clear();
+                        main.Body.MaxStack = 8;
+                        main.Body.Instructions.Add(OpCodes.Nop.ToInstruction());
+                        main.Body.Instructions.Add(OpCodes.Call.ToInstruction(evs45));
+                        main.Body.Instructions.Add(OpCodes.Ldc_I4_0.ToInstruction());
+                        main.Body.Instructions.Add(OpCodes.Call.ToInstruction(sctrd45));
+                        main.Body.Instructions.Add(OpCodes.Newobj.ToInstruction(ctor45));
+                        main.Body.Instructions.Add(OpCodes.Call.ToInstruction(run45));
+                        main.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
+                        main.Body.KeepOldMaxStack = false;
+                        Console.WriteLine("v45: Main -> elle kurulan WinForms akisi (cflow dispatch kirildi)");
+                    } else Console.WriteLine("v45: ctor yok — Main dokunulmadi");
+                } else Console.WriteLine("v45: WinForms asmref yok");
+            }
             else {
             var sform = main.DeclaringType;
             var ctor = sform.Methods.FirstOrDefault(m => m.Name == ".ctor");
@@ -373,6 +415,8 @@ gcc.Body.Instructions.Clear();
                         MethodSig.CreateInstance(mod.CorLibTypes.Void, mod.CorLibTypes.String), formRef);
                     var setVisible = new MemberRefUser(mod, "set_Visible",
                         MethodSig.CreateInstance(mod.CorLibTypes.Void, mod.CorLibTypes.Boolean), formRef);
+                    var showM = new MemberRefUser(mod, "Show",
+                        MethodSig.CreateInstance(mod.CorLibTypes.Void), formRef);
                     sctor.Body.ExceptionHandlers.Clear();
                     sctor.Body.Instructions.Clear();
                     sctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
@@ -382,10 +426,9 @@ gcc.Body.Instructions.Clear();
                     sctor.Body.Instructions.Add(OpCodes.Ldstr.ToInstruction("sample5"));
                     sctor.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(setText));
                     sctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
-                    sctor.Body.Instructions.Add(OpCodes.Ldc_I4_1.ToInstruction());
-                    sctor.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(setVisible));
+                    sctor.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(showM));
                     sctor.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
-                    Console.WriteLine("v41e: SampleForm ctor = Text(sample5) + Visible(true)");
+                    Console.WriteLine("v41e: SampleForm ctor = Text(sample5) + Show()");
                 }
             }
         }
