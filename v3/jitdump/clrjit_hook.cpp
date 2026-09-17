@@ -218,12 +218,19 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID) {
         DisableThreadLibraryCalls(h);
         if (!GetEnvironmentVariableA("JITDUMP_DIR", g_outDir, sizeof(g_outDir)))
             strcpy_s(g_outDir, ".");
-        // clrjit.dll may not be loaded yet (early APC injection):
-        // install from a background thread (60s retry loop).
+        // v5 race fix: x86 Framework targets finish their startup JIT burst
+        // before the 100ms deferred loop lands (dotqw proof: HOOK-OK but
+        // 0 bodies, GUI alive — every method compiled pre-hook). Try a
+        // synchronous install FIRST — this DllMain runs inside the
+        // LoadLibraryA APC, which executes during mscoree's alertable
+        // startup waits, BEFORE managed Main. Force-load clrjit if needed.
+        installHook();
+        // then keep the retry loop, but 10ms instead of 100ms.
         CreateThread(0, 0, [](void*) -> DWORD {
-            for (int i = 0; i < 600; i++) {
+            for (int i = 0; i < 6000; i++) {
+                if (g_origCompile) break;
                 if (installHook()) break;
-                Sleep(100);
+                Sleep(10);
             }
             return 0;
             }, 0, 0, 0);
