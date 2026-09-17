@@ -94,12 +94,40 @@ class NBIlMerge {
                     if (!m2.HasBody) bodyless.Add(m2);
             Console.WriteLine("seq hedef havuz (govdesiz metot): " + bodyless.Count);
         }
-        int seqIdx = 0;
+        // NB_STUBMAP: elle stub=dump eslemesi (kanitli rota).
+        // Format: NB_STUBMAP="m_0000.bin=metotAdi;m_0001.bin=metotAdi2"
+        var stubMap = new System.Collections.Generic.Dictionary<string,string>();
+        string smEnv = Environment.GetEnvironmentVariable("NB_STUBMAP");
+        if (!string.IsNullOrEmpty(smEnv))
+            foreach (var pair in smEnv.Split(';')) {
+                var kv = pair.Split('=');
+                if (kv.Length == 2) stubMap[kv[0].Trim()] = kv[1].Trim();
+            }
+int seqIdx = 0;
+        int stubHit = 0;
         for (int i = 0; i < toks.Count; i++) {
+            // NB_STUBMAP: dosya adi (m_XXXX.bin) elle eslenmisse o
+            // dump govdini adindan bulunan metoda yaz — kanitli
+            // elle rota, sentetik/eslesmeyen tokenleri asmak icin.
+            string baseName = System.IO.Path.GetFileName(
+                Directory.GetFiles(a[1], "m_*.bin")[i]);
+            MethodDef stubTarget = null;
+            string dumpName = null;
+            if (stubMap.Count > 0 && stubMap.TryGetValue(baseName, out dumpName)) {
+                foreach (var t in mod.GetTypes())
+                    foreach (var mstub in t.Methods)
+                        if (mstub.Name.String == dumpName) { stubTarget = mstub; break; }
+                if (stubTarget != null) {
+                    // genel yazma akisi bu govdeyi halleder:
+                    // m=stubTarget set et, have=true.
+                    stubHit++;
+                }
+            }
             if (noBodyWrite) { skipped++; continue; }
-            MethodDef m;
-            bool have = byToken.TryGetValue(toks[i], out m);
-            if (!have || m == null) {
+            MethodDef m = stubTarget;
+                        bool have = stubTarget != null;
+                        if (!have) have = byToken.TryGetValue(toks[i], out m);
+                        if (!have || m == null) {
                 if (seqMode && seqIdx < bodyless.Count) {
                                     m = bodyless[seqIdx++];
                                     if (m == null) { skipped++; continue; }
@@ -230,6 +258,7 @@ class NBIlMerge {
                 Console.WriteLine("  [exc] 0x" + toks[i].ToString("X8") + ": " + e.GetType().Name + " " + e.Message);
             }
         }
+        Console.WriteLine("stub-map vuruş: " + stubHit);
         Console.WriteLine("GERCEK YAZILAN metot: " + restored + " | atlanan: " + skipped);
         Console.WriteLine("ILMATCH (sezgisel, KANITSIZ esleme): " + ilMatchUsed);
         string mw = Environment.GetEnvironmentVariable("NB_MAXWRITE");
