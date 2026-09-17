@@ -1,8 +1,8 @@
 // nbpatch.cs — HAM BYTE PATCH rota: dnlib Write AT'nin runtime
-// CRC'sini bozuyor (nb2-rt NRE kaniti). Bu rota PE'ye hic
-// dokunmaz: MethodDef RVA'larina JIT-dump govdelerini direkt
-// bayt olarak yazar. Method body RVA dnlib'den cozulur, govde
-// tiny/fat header + IL olarak dosyaya yazilir. CRC kapsam
+// CRC'sini bozuyor (nb2-rt NRE proofi). Bu rota PE'ye hic
+// dokunmaz: MethodDef RVA'larina JIT-dump bodylerini direkt
+// bayt olarak yazar. Method body RVA dnlib'den cozulur, body
+// tiny/fat header + IL olarak fileya yazilir. CRC kapsam
 // degisikligi nb2'nin kendi degisikligiyle ayni mekanizma.
 // Kullanim: nbpatch.exe <in.exe> <dumpdir> <out.exe>
 using System;
@@ -33,15 +33,15 @@ class NbPatch {
             var rva = (uint)m.RVA;
             if (rva == 0) { skipped++; continue; }
 
-            // dosya offsetine cevir: PE section'lardan
+            // file offsetine cevir: PE section'lardan
             long off = RvaToOffset(pe, rva);
             if (off < 0) { skipped++; continue; }
 
-            // eski govde boyutunu coz (tiny/fat)
+            // eski body boyutunu coz (tiny/fat)
             uint oldSize = OldBodySize(pe, off);
             if (oldSize == 0) { skipped++; continue; }
 
-            // yeni govde: header + IL
+            // yeni body: header + IL
             byte[] body = new byte[il];
             Array.Copy(d, 20, body, 0, il);
             byte[] all;
@@ -58,7 +58,7 @@ class NbPatch {
                 ms.Write(BitConverter.GetBytes((uint)0), 0, 4);
                 ms.Write(body, 0, body.Length);
                 all = ms.ToArray();
-                if (all.Length % 4 != 0) { // fat govde 4-byte hizali
+                if (all.Length % 4 != 0) { // fat body 4-byte hizali
                     var pad = new byte[all.Length + (4 - all.Length % 4)];
                     Array.Copy(all, pad, all.Length);
                     all = pad;
@@ -66,7 +66,7 @@ class NbPatch {
             }
 
             if (all.Length > oldSize) {
-                // yeni govde eski alandan buyuk — yazilamaz (diger
+                // yeni body eski alandan buyuk — yazilamaz (diger
                 // metodun alanina tasmas). Skip + rapor.
                 skipped++;
                 Console.WriteLine("  [buyuk] 0x" + tok.ToString("X8") + " yeni=" + all.Length + " eski=" + oldSize);
@@ -74,14 +74,14 @@ class NbPatch {
             }
 
             Array.Copy(all, 0, pe, off, all.Length);
-            // kalan baytlari sifirla (eski govde kalintisi zararsiz
+            // kalan baytlari sifirla (eski body kalintisi zararsiz
             // ama temiz olsun):
             for (long z = off + all.Length; z < off + oldSize; z++) pe[z] = 0;
             patched++;
         }
-        Console.WriteLine("HAM-PATCH metot: " + patched + " | atlanan: " + skipped);
+        Console.WriteLine("HAM-PATCH method: " + patched + " | atlanan: " + skipped);
         File.WriteAllBytes(a[2], pe);
-        Console.WriteLine("[ok] yazildi: " + a[2]);
+        Console.WriteLine("[ok] written: " + a[2]);
         return 0;
     }
 

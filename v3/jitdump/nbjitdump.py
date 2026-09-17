@@ -2,18 +2,18 @@
 
 Hedefi suspended CreateProcess ile baslatir, clrjit_dump{32,64}.dll'i
 APC ile inject eder; JIT hook'u clrjit.dll yuklenince kurulur ve
-NecroBit'in JIT aninda cozdugu CIL govdesini m_XXXXXXXX.bin olarak
-diske doker. Kanitli: 7.5.9.1 T4Y hedefi, 238 govde / 7060 IL bayt.
+NecroBit'in JIT aninda cozdugu CIL bodysini m_XXXXXXXX.bin olarak
+diske doker. Kanitli: 7.5.9.1 T4Y targeti, 238 body / 7060 IL bayt.
 
 Kullanim:
   python nbjitdump.py <target.exe> [--out DIR] [--wait 30] [--force-run]
 
 Cikti:
   DIR/m_XXXXXXXX.bin — 20B header (token, ilSize, maxStack, ehCount,
-                       options) + ham CIL govdesi
-  DIR/marker.txt — DLL attach + hook kurulum kaniti
-  DIR/jitdump.log — govde listesi
-Token notu: dosya adi JIT sirasidir (sentez); write-back asamasinda
+                       options) + ham CIL bodysi
+  DIR/marker.txt — DLL attach + hook kurulum proofi
+  DIR/jitdump.log — body listesi
+Token notu: file adi JIT sirasidir (sentez); write-back asamasinda
 IL-pattern matching ile MethodDef eslemesi yapilir (nbilmerge).
 """
 import argparse
@@ -46,9 +46,9 @@ def corflags_of(path):
     cdir_rva = struct.unpack_from("<I", d, ddoff + 14 * 8)[0]
     if not cdir_rva:
         return None, False
-    # cdir_rva VIRTUAL address — dosya boyutuyla karsilastirma YANLIS:
-    # kucuk dll'lerde RVA > filesize olabilir (bolum alignment). Bolum
-    # cozumlemesi asagida; burada sadece 0 kontrolu dogru (g5 bug fix).
+    # cdir_rva VIRTUAL address — file boyutuyla karsilastirma YANLIS:
+    # kucuk dll'lerde RVA > filesize olabilir (bdeadm alignment). Bdeadm
+    # sdeadtionlemesi asagida; burada sadece 0 kontrdead dogru (g5 bug fix).
     nsec = struct.unpack_from("<H", d, pe + 6)[0]
     opt_size = struct.unpack_from("<H", d, pe + 20)[0]
     sec_tab = pe + 24 + opt_size
@@ -68,18 +68,18 @@ def corflags_of(path):
 
 
 def is_readytorun(path):
-    """R2R (ReadyToRun) hedeflerde clrjit KULLANILMAZ — hook islevsiz.
+    """R2R (ReadyToRun) targetlerde clrjit KULLANILMAZ — hook islevsiz.
     R2R debug directory tipi 0x11 (IMAGE_DIRECTORY_TYPE_EXCEPTION)
-    yaninda COR_RSDS degil R2R entry bulunur; basit esik: debug dir
+    yaninda COR_RSDS degil R2R entry bulunur; basit threshold: debug dir
     tip 0x11 varsa + .rsrc degil 'RTR' isareti. Pratik tarama:
-    dosyada 'ReadyToRun' metadata bolumu aramak yerine debug
-    directory tiplerinden 0x10 (REPRO) / R2R header kontrolu."""
+    fileda 'ReadyToRun' metadata bdeadmu aramak yerine debug
+    directory tiplerinden 0x10 (REPRO) / R2R header kontrdead."""
     d = open(path, "rb").read(65536)
     return b"RTR" not in d and (b"ReadyToRun" in d or b"readytorun" in d.lower())
 
 
 def build_launcher(arch, out_dir):
-    """nbjit_launch.exe'yi hedef bitness'inde derler (x86 x86 surecler icin sart)."""
+    """nbjit_launch.exe'yi target bitness'inde derler (x86 x86 processler icin sart)."""
     src = HERE / "nbjit_launch.c"
     launcher = out_dir / "nbjit_launch.exe"
     env = dict(os.environ)
@@ -108,21 +108,21 @@ def main():
     ap.add_argument("--out", default=None)
     ap.add_argument("--wait", type=int, default=30)
     ap.add_argument("--force-run", action="store_true",
-                    help="GUI hedeflerin erken olumunde dump'i yine de kabul et")
+                    help="GUI targetlerin erken deadmunde dump'i yine de kabul et")
     args = ap.parse_args()
 
     tgt = Path(args.target).resolve()
     out = Path(args.out).resolve() if args.out else tgt.parent / "jitdump"
     out.mkdir(exist_ok=True)
 
-    # --- hedef siniflandirmasi (genellik icin kritik) ---
+    # --- target siniflandirmasi (genellik icin kritik) ---
     flags, managed = corflags_of(tgt)
     if not managed:
         # .NET Core/5+ apphost exe: native gorunumlu stub, yanindaki
         # <stem>.dll gercek yonetilen modul. DLL varsa rotayi ona cevir.
         stem = tgt.with_suffix(".dll")
         if stem.exists():
-            print(f"[bilgi] apphost — yonetilen modul: {stem.name}")
+            print(f"[info] apphost — yonetilen modul: {stem.name}")
             tgt = stem.resolve()
             flags, managed = corflags_of(tgt)
         if not managed:
@@ -130,10 +130,10 @@ def main():
             return 3
     if flags is not None and not (flags & 0x2) and not (flags & 0x10000):
         # 32BITREQUIRED(0x2) yok VE 32BITPREF(0x10000) yok = AnyCPU
-        # -> 64-bit OS'ta x64 surec; x86 DLL asla yuklenmez (t1
+        # -> 64-bit OS'ta x64 process; x86 DLL asla yuklenmez (t1
         # hatasinin kaynagi). x64 rota zorunlu:
         arch = "x64"
-        print("[bilgi] AnyCPU — 64-bit surec modu")
+        print("[info] AnyCPU — 64-bit process modu")
     elif is_readytorun(tgt):
         print("[!] ReadyToRun — clrjit kullanilmiyor, JIT dump islevsiz")
         return 3
@@ -151,39 +151,39 @@ def main():
     env = dict(os.environ)
     env["NB_DLL"] = str(dll)
     env["JITDUMP_DIR"] = str(out)
-    # tiered-inline kirici: Magic gibi kucuk metotlar ctor'a inlinelanmadan
+    # tiered-inline kirici: Magic gibi kucuk methodlar ctor'a inlinelanmadan
     # ayri JIT girisi olarak dump'a duser (g5). NB_NOINLINE=1 ile aktif.
     if os.environ.get("NB_NOINLINE") == "1":
         env["COMPlus_JitNoInline"] = "1"
-        print("[bilgi] COMPlus_JitNoInline=1 — tiered inline kapali")
-    # calistirilabilir sec: hedef .dll ise apphost .exe'sini bul
+        print("[info] COMPlus_JitNoInline=1 — tiered inline kapali")
+    # calistirilabilir sec: target .dll ise apphost .exe'sini bul
     run_tgt = tgt
     if tgt.suffix.lower() == ".dll":
         host = tgt.with_suffix(".exe")
         if host.exists():
             run_tgt = host.resolve()
-            print(f"[bilgi] calistirilan: apphost {run_tgt.name}")
+            print(f"[info] calistirilan: apphost {run_tgt.name}")
         else:
             print("[!] DLL icin apphost exe yok — dotnet host gerekli")
             return 3
     p = subprocess.Popen([str(launcher), f'"{str(run_tgt)}"'], cwd=str(tgt.parent), env=env)
     try:
         p.wait(timeout=args.wait)
-        print(f"hedef cikti rc={p.returncode}")
+        print(f"target cikti rc={p.returncode}")
     except subprocess.TimeoutExpired:
         subprocess.run(["taskkill", "/IM", tgt.name, "/F"], capture_output=True)
         p.kill()
-        print(f"hedef {args.wait}s sonunda kapatildi (GUI yasar — normal)")
+        print(f"target {args.wait}s sonunda disabled (GUI yasar — normal)")
 
     time.sleep(1)
     bins = sorted(out.glob("m_*.bin"))
     marker = out / "marker.txt"
     log = out / "jitdump.log"
     hooked = marker.exists() and "HOOK-OK" in marker.read_text(errors="replace")
-    print(f"durum: hook={'OK' if hooked else 'FAIL'} | govde={len(bins)} | toplam IL={sum(b.stat().st_size - 20 for b in bins)}")
+    print(f"status: hook={'OK' if hooked else 'FAIL'} | body={len(bins)} | toplam IL={sum(b.stat().st_size - 20 for b in bins)}")
     if log.exists():
         lines = log.read_text(errors="replace").strip().splitlines()
-        print(f"log: {len(lines)} satir")
+        print(f"log: {len(lines)} line")
     return 0 if bins else 2
 
 

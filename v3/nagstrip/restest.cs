@@ -7,7 +7,7 @@ class ResTest {
             Console.WriteLine("res: " + n);
         try {
             var s = asm.GetManifestResourceStream("lIbmsk8bjV8OfC2Eei.hLMLXK0edH4c3LAnjX");
-            Console.WriteLine("hedef res: " + (s == null ? "NULL" : s.Length + "B"));
+            Console.WriteLine("target res: " + (s == null ? "NULL" : s.Length + "B"));
         } catch (Exception ex) { Console.WriteLine("hata: " + ex.Message); }
     }
 }

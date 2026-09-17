@@ -1,7 +1,7 @@
-// nagstrip5.cs — v5 MİNİMAL: sadece nag-throw gövdesini ret'le.
+// nagstrip5.cs — v5 MINIMAL: sadece nag-throw bodysini ret'le.
 // Reactor runtime init'lerine (qp1d5IbOJ, OHl6UVo6W) DOKUNMA.
-// Bulgu zinciri: orijinal yasıyor; de4dot AV; hepsini-nop'la AV.
-// Şimdi minimal: nag metodu gövdesi -> tek ret.
+// Bulgu zinciri: original yasiyor; de4dot AV; hepsini-nop'la AV.
+// Simdi minimal: nag metodu bodysi -> tek ret.
 using System;
 using System.Collections.Generic;
 using dnlib.DotNet;
@@ -23,7 +23,7 @@ class NagStrip5 {
                         s.Contains("unregistered version")) { hasNag = true; break; }
                 }
                 if (!hasNag) continue;
-                // govdeyi yerinde yeniden kur: hepsi nop + son ret
+                // bodyyi yerinde yeniden kur: hepsi nop + son ret
                 var ins = m.Body.Instructions;
                 for (int k = 0; k < ins.Count; k++) {
                     ins[k].OpCode = OpCodes.Nop;

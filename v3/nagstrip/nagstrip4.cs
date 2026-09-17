@@ -1,13 +1,13 @@
-// nagstrip4.cs — v4: branch hedeflerini bozmayan nag-strip.
+// nagstrip4.cs — v4: branch targetlerini bozmayan nag-strip.
 //
-// Önceki iki denemenin öğrettiği:
-//   v2 (call'ı listeden çıkar): branch hedefi kırılır
-//   v3 (call'ı nop'la ama runtime metot gövdesini Clear() et): Clear()
-//       branch hedeflerini kırıyor — çünkü KALDIRILAN instruction'lar
-//       başka metotların branch hedefi olarak kayıtlı.
-// Doğru yöntem: runtime metot gövdesindeki HER instruction'ı NOP yap,
-// sonuncuyu ret yap (liste hep dolu — Instruction objeleri yerinde kalır,
-// branch hedefi referansları geçerli).
+// Onceki iki denemenin ogrettigi:
+//   v2 (call'i listeden cikar): branch targeti kirilir
+//   v3 (call'i nop'la ama runtime method bodysini Clear() et): Clear()
+//       branch targetlerini kiriyor — cunku KALDIRILAN instruction'lar
+//       baska methodlarin branch targeti olarak recordli.
+// Dogru yontem: runtime method bodysindeki HER instruction'i NOP yap,
+// sonuncuyu ret yap (liste hep full — Instruction objeleri yerinde kalir,
+// branch targeti referanslari gecerli).
 using System;
 using System.Collections.Generic;
 using dnlib.DotNet;
@@ -34,9 +34,9 @@ class NagStrip4 {
                 if (isRuntime) runtimeMethods.Add(m);
             }
         }
-        Console.WriteLine($"runtime metot: {runtimeMethods.Count}");
+        Console.WriteLine($"runtime method: {runtimeMethods.Count}");
 
-        // govde: her instruction -> nop, sonuncu -> ret (yerinde degisim)
+        // body: her instruction -> nop, sonuncu -> ret (yerinde degisim)
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
                 if (!m.HasBody) continue;
@@ -49,7 +49,7 @@ class NagStrip4 {
                         if (k == ins.Count - 1) i.OpCode = OpCodes.Ret;
                         continue;
                     }
-                    // diger metotlardaki runtime-call'lari nop'la
+                    // diger methodlardaki runtime-call'lari nop'la
                     if ((i.OpCode == OpCodes.Call || i.OpCode == OpCodes.Callvirt)
                         && i.Operand is IMethod im && runtimeMethods.Contains(im)) {
                         i.OpCode = OpCodes.Nop;
@@ -58,7 +58,7 @@ class NagStrip4 {
                 }
             }
         }
-        // obfuscate govdelerde max-stack yeniden hesabi patlar — koru
+        // obfuscate bodylerde max-stack yeniden hesabi patlar — koru
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
                 if (m.HasBody) m.Body.KeepOldMaxStack = true;

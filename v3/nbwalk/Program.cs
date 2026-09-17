@@ -62,7 +62,7 @@ class NBWalk {
             }
         }
 
-        // 4) byte[] alanlarini ham dosyalara dök + policyCreatorDic icerigi
+        // 4) byte[] alanlarini ham filelara dok + policyCreatorDic icerigi
         foreach (var t in SafeTypes(asm)) {
             if (t == null) continue;
             FieldInfo[] fs;

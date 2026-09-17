@@ -1,9 +1,9 @@
-// nagstrip.cs — t1 kanıtı: NecroBit-only 7.5 hedeften demo-nag'ı çıkar,
-// runnable rebuild üret. Borç: "nbrebuild runnable kanıtı" 7.5 layout'unda.
+// nagstrip.cs — t1 proofi: NecroBit-only 7.5 targetten demo-nag'i cikar,
+// runnable rebuild uret. Borc: "nbrebuild runnable proofi" 7.5 layout'unda.
 //
-// Bulgu (ölçülmüş): 7.5 demo NecroBit comp-mode gövdeleri metadata'da
-// bırakıyor (dnlib 179/179 görüyor, 0 stub) → rebuild = dnlib ile
-// <Module>::m8DF1397502BE3EE (nag throw) gövdesini ret ile değiştir.
+// Bulgu (olculmus): 7.5 demo NecroBit comp-mode bodyleri metadata'da
+// birakiyor (dnlib 179/179 goruyor, 0 stub) → rebuild = dnlib with
+// <Module>::m8DF1397502BE3EE (nag throw) bodysini ret with degistir.
 using System;
 using System.IO;
 using dnlib.DotNet;
@@ -25,7 +25,7 @@ class NagStrip {
                         s.Contains("unregistered version")) { hasNag = true; break; }
                 }
                 if (!hasNag) continue;
-                // nag metodu: throw yerine ret (stack-nötr: void metot)
+                // nag metodu: throw yerine ret (stack-notr: void method)
                 m.Body.Instructions.Clear();
                 m.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
                 patched++;

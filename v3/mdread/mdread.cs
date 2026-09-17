@@ -1,6 +1,6 @@
-// mdread.cs — dnlib ile MethodDef gövde okuyucu (ground truth).
-// Amaç: elle parser'ım ile dnlib'in okuduğunu karşılaştır — kim doğru?
-// Kullanım: mdread.exe <assembly> [--il]
+// mdread.cs — dnlib with MethodDef body okuyucu (ground truth).
+// Amac: manually parser'im with dnlib'in okudugunu karsilastir — kim dogru?
+// Kullanim: mdread.exe <assembly> [--il]
 using System;
 using System.IO;
 using dnlib.DotNet;
@@ -18,7 +18,7 @@ class MDRead {
             }
         }
         Console.WriteLine($"types={mod.Types.Count} methods withBody={withBody} noBody={noBody}");
-        // NecroBit stub tespiti: govdesi sadece ldsfld + callvirt/call Invoke?
+        // NecroBit stub tespiti: bodysi sadece ldsfld + callvirt/call Invoke?
         int stubs = 0, real = 0;
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
@@ -40,7 +40,7 @@ class MDRead {
                 }
             }
         }
-        Console.WriteLine($"NecroBit-stub={stubs} gercek-govde={real}");
+        Console.WriteLine($"NecroBit-stub={stubs} gercek-body={real}");
         return 0;
     }
 }

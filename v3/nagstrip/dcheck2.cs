@@ -1,4 +1,4 @@
-// dcheck2.cs — AoIBWWl hedefli cagrilari OZEL analiz et.
+// dcheck2.cs — AoIBWWl targetli calllari OZEL analiz et.
 // Soru: AoIBWWl tipi metadata'da VAR MI (dnlib TypeDef olarak okuyor mu),
 // yoksa MemberRef'in DeclaringType'i nereye scope ediliyor?
 using System;
@@ -16,7 +16,7 @@ class DCheck2 {
                 Console.WriteLine($"[typedef] {t.FullName} methods={t.Methods.Count}");
         }
 
-        // 2) AoIBWWl'e giden TUM operand'larin cozunum durumunu yazdir
+        // 2) AoIBWWl'e giden TUM operand'larin cozunum statusunu yazdir
         int n = 0;
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {

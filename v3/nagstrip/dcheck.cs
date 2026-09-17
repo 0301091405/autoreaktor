@@ -1,4 +1,4 @@
-// dcheck.cs — AoIBWWl::* cagrilarinin dnlib gozumunu debug et.
+// dcheck.cs — AoIBWWl::* calllarinin dnlib gozumunu debug et.
 using System;
 using System.Linq;
 using dnlib.DotNet;

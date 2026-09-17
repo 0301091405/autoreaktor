@@ -1,7 +1,7 @@
-# Tokenlar modulde VAR (rid 3 = ?.?::?, govdesiz). Yani byToken
+# Tokenlar modulde VAR (rid 3 = ?.?::?, bodyless). Yani byToken
 # MISS DEGIL — bulmasi gerek! nbilmerge'de neden 108 hep skip?
 # Kod tekrar bak: TryGetValue(toks[i], out m) — toks[i] dump
-# dosyasinin ADINDAKI token degil ICINDEKI token! Dosya adi
+# filesinin ADINDAKI token degil ICINDEKI token! Dosya adi
 # m_06000003.bin ama ICINDEKI ilk 4 bayt token alani: ilk dump
 # turunda sentetik sayiydi, MethodDesc fix sonrasi 0x06000003.
 # Ama nbilmerge toks[i]'yi ICINDEKI alandan okuyor — dogru.
@@ -13,7 +13,7 @@
 # calismiyor olabilir (ModuleDefMD IInstructionOperandResolver
 # implement eder mi?). Cast istisnasiz gecmis olmali yoksa exc
 # yazilirdi. newBody donusunde 0 instr — resolver calisti ama
-# IL cozumlemesi bos kaldi? 57 baytlik govde icin 0 instr
+# IL sdeadtionlemesi bos kaldi? 57 baytlik body icin 0 instr
 # olmaz. MUHTEMEL: CreateCilBody byte[] overload'i code+eh
 // bekluyor; eh=null patlamadan bos donebilir.
 # TEST: kucuk bir ornek ile CreateCilBody'yi manuel dene:
@@ -36,7 +36,7 @@ class Q5 {
                     try {
                         var nb = MethodBodyReader.CreateCilBody(
                             (IInstructionOperandResolver)m, body, null, mm.Parameters);
-                        Console.WriteLine("rid3 govde instr: " + (nb == null ? -1 : nb.Instructions.Count));
+                        Console.WriteLine("rid3 body instr: " + (nb == null ? -1 : nb.Instructions.Count));
                         if (nb != null)
                             foreach (var i2 in nb.Instructions)
                                 Console.WriteLine("   " + i2.OpCode.Name + " " + (i2.Operand ?? ""));

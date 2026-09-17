@@ -4,7 +4,7 @@
 // hepsinde miss — cunku dump token'lari & 0xFFFFFF ile modulun
 // rid'leri ust uste dusmuyor olabilir. once taman tarama:
 // her dump token'i icin modulde var mi YOKSA rid'siz yaz.
-// AYRICA CreateCilBody cagrisinda exception mesajlarini yaz.
+// AYRICA CreateCilBody callnda exception mesajlarini yaz.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -53,7 +53,7 @@ class NBIlMerge {
     }
 
     static int Main(string[] a) {
-        if (a.Length < 3) { Console.WriteLine("kullanım: nbilmerge <in.exe> <dumpdir> <out.exe>"); return 1; }
+        if (a.Length < 3) { Console.WriteLine("usage: nbilmerge <in.exe> <dumpdir> <out.exe>"); return 1; }
         var mod = ModuleDefMD.Load(a[0]);
 
         var bodies = new List<byte[]>();
@@ -66,7 +66,7 @@ class NBIlMerge {
             Array.Copy(d, 20, body, 0, il);
             toks.Add(tok); bodies.Add(body);
         }
-        Console.WriteLine("dump govde: " + toks.Count);
+        Console.WriteLine("dump body: " + toks.Count);
 
         var byToken = new Dictionary<uint, MethodDef>();
         foreach (var t in mod.GetTypes())
@@ -76,15 +76,15 @@ class NBIlMerge {
 
         int restored = 0, skipped = 0;
         bool noBodyWrite = Environment.GetEnvironmentVariable("NB_NOBODY") == "1";
-        // SEQ-esleme (x64 hedefler icin): sentetik tokenli dumplar
-        // (rid araligi disi) nb2'de govdesiz metotlarla metadatada
+        // SEQ-esleme (x64 targetler icin): sentetik tokenli dumplar
+        // (rid araligi disi) nb2'de bodyless methodlarla metadatada
         // karsilasma sirasina gore baglanir. Kanit zayfi — sadece
         // rapor modunda kullan (NB_SEQ=1).
         bool seqMode = Environment.GetEnvironmentVariable("NB_SEQ") == "1";
-        // NB_ILMATCH=1: sentetik tokenli dumplari govdesiz metotlarla
+        // NB_ILMATCH=1: sentetik tokenli dumplari bodyless methodlarla
         // IL-imza (ilSize + ilk bayt) benzerligiyle esle. ilSize
-        // benzersizse gecerli eslemedir; cakisma durumunda ilk
-        // aday alinir ve RAPORLANIR (kanit zayfligi acik).
+        // benzersizse gecerli eslemedir; cakisma statusunda ilk
+        // aday alinir ve RAPORLANIR (proof zayfligi acik).
         bool ilMatch = Environment.GetEnvironmentVariable("NB_ILMATCH") == "1";
         int ilMatchUsed = 0;
         var bodyless = new List<MethodDef>();
@@ -92,10 +92,10 @@ class NBIlMerge {
             foreach (var t in mod.GetTypes())
                 foreach (var m2 in t.Methods)
                     if (!m2.HasBody) bodyless.Add(m2);
-            Console.WriteLine("seq hedef havuz (govdesiz metot): " + bodyless.Count);
+            Console.WriteLine("seq target havuz (bodyless method): " + bodyless.Count);
         }
-        // NB_STUBMAP: elle stub=dump eslemesi (kanitli rota).
-        // Format: NB_STUBMAP="m_0000.bin=metotAdi;m_0001.bin=metotAdi2"
+        // NB_STUBMAP: manually stub=dump eslemesi (proofli rota).
+        // Format: NB_STUBMAP="m_0000.bin=methodAdi;m_0001.bin=methodAdi2"
         var stubMap = new System.Collections.Generic.Dictionary<string,string>();
         string smEnv = Environment.GetEnvironmentVariable("NB_STUBMAP");
         if (!string.IsNullOrEmpty(smEnv))
@@ -106,9 +106,9 @@ class NBIlMerge {
 int seqIdx = 0;
         int stubHit = 0;
         for (int i = 0; i < toks.Count; i++) {
-            // NB_STUBMAP: dosya adi (m_XXXX.bin) elle eslenmisse o
-            // dump govdini adindan bulunan metoda yaz — kanitli
-            // elle rota, sentetik/eslesmeyen tokenleri asmak icin.
+            // NB_STUBMAP: file adi (m_XXXX.bin) manually eslenmisse o
+            // dump govdini adindan bulunan metoda yaz — proofli
+            // manually rota, sentetik/eslesmeyen tokenleri asmak icin.
             string baseName = System.IO.Path.GetFileName(
                 Directory.GetFiles(a[1], "m_*.bin")[i]);
             MethodDef stubTarget = null;
@@ -118,7 +118,7 @@ int seqIdx = 0;
                     foreach (var mstub in t.Methods)
                         if (mstub.Name.String == dumpName) { stubTarget = mstub; break; }
                 if (stubTarget != null) {
-                    // genel yazma akisi bu govdeyi halleder:
+                    // genel yazma akisi bu bodyyi halleder:
                     // m=stubTarget set et, have=true.
                     stubHit++;
                 }
@@ -134,15 +134,15 @@ int seqIdx = 0;
                                     have = true;
                                 } else if (ilMatch && bodyless.Count > 0) {
                                     // IL-imza: dump (ilSize, ilk bayt) — moduldeki
-                                    // govdesiz metotlarin bilinen IL'i yok; ama bu
+                                    // bodyless methodlarin bilinen IL'i yok; ama bu
                                     // esleme TERS yonde calisir: dump'in ilSize'i
                                     // modul metadata'sindan TAHMIN edilemez. Bu yuzden
                                     // ILMATCH yalniz ilSize + call-count sezgisel
                                     // eslemesi yapabilir ve SONUC RAPORLANIR:
                                     m = null; int bestScore = -1;
-                                    // govdesiz metotlarin param sayisi + statiklik
+                                    // bodyless methodlarin param sayisi + statiklik
                                     // dump'tan bilinmiyor — en zayif bag: siradaki
-                                    // uygun govdesiz metodu al ama ETIKETLE:
+                                    // uygun bodyless metodu al ama ETIKETLE:
                                     for (int bi = 0; bi < bodyless.Count; bi++) {
                                         var cand = bodyless[bi];
                                         if (cand == null || cand.HasBody) continue;
@@ -171,7 +171,7 @@ int seqIdx = 0;
                     var ms = new MemoryStream();
                     // fat header: word0 = (3 dwords << 12) | flags.
                     // flags 0x13 = FatFormat(0x3) | InitLocals(0x10).
-                    // 0x3011 yanlis bit duzeni — 0x3013 dogrusu (q20 kanitli).
+                    // 0x3011 yanlis bit duzeni — 0x3013 dogrusu (q20 proofli).
                     ushort flags = 0x3013;
                     ms.Write(BitConverter.GetBytes(flags), 0, 2);
                     ms.Write(BitConverter.GetBytes((ushort)8), 0, 2);
@@ -187,7 +187,7 @@ int seqIdx = 0;
                 if (newBody != null && newBody.Instructions.Count > 0) {
                     // LOCALS: dump'ta localVarSig yok — ldloc/stloc
                     // operandlari null kaldi (writer "Operand is not
-                    // a local/arg" hatasi). Govdeden TERS cozum:
+                    // a local/arg" hatasi). Govdeden TERS sdeadtion:
                     // max local index + 1 kadar Variables doldur ve
                     // null operandli ldloc/stloc/ldloca'lari indexe
                     // bagla.
@@ -213,10 +213,10 @@ int seqIdx = 0;
                         }
                     }
                     // CreateCilBody variables listesi bos olabilir:
-                    // local kullanan govdede ldloc instr operand null
+                    // local kullanan bodyde ldloc instr operand null
                     // degilse dnlib zaten cozmustur; null ise index
                     // instr'in sirasindan cikarilamaz — guvenli yol:
-                    // metot imzasindan + govde buyuklugundan degil,
+                    // method imzasindan + body buyuklugundan degil,
                     // ham IL'den mini tarama:
                     if (localOps.Count > 0) {
                         string mwv = Environment.GetEnvironmentVariable("NB_MAXWRITE");
@@ -258,8 +258,8 @@ int seqIdx = 0;
                 Console.WriteLine("  [exc] 0x" + toks[i].ToString("X8") + ": " + e.GetType().Name + " " + e.Message);
             }
         }
-        Console.WriteLine("stub-map vuruş: " + stubHit);
-        Console.WriteLine("GERCEK YAZILAN metot: " + restored + " | atlanan: " + skipped);
+        Console.WriteLine("stub-map hits: " + stubHit);
+        Console.WriteLine("GERCEK YAZILAN method: " + restored + " | atlanan: " + skipped);
         Console.WriteLine("ILMATCH (sezgisel, KANITSIZ esleme): " + ilMatchUsed);
         string mw = Environment.GetEnvironmentVariable("NB_MAXWRITE");
         if (mw != null) Console.WriteLine("NB_MAXWRITE=" + mw + " (limit modu)");
@@ -298,9 +298,9 @@ int seqIdx = 0;
                 foreach (var ins in toRemove) m.Body.Instructions.Remove(ins);
             }
         }
-        Console.WriteLine("null-sil: " + nullSil);
+        Console.WriteLine("null-wipe: " + nullSil);
 
-        // AT-KILL kapatildi (NB_ATKILL=1 opt-in): PreserveTokens
+        // AT-KILL disabled (NB_ATKILL=1 opt-in): PreserveTokens
         // ile yazim nb2'nin CRC dengesini koruyorsa gerek yok;
         // "tampered" tekrar cikarsa NB_ATKILL=1 ile v44 cerrahisi.
         int tamperKilled = 0, tamperNop = 0;
@@ -319,9 +319,9 @@ int seqIdx = 0;
                 }
             }
         foreach (var tm in tamperMethods) {
-            // SATIR-CERRAHISI (metot-kill DEGIL): sadece "tampered"
+            // SATIR-CERRAHISI (method-kill DEGIL): sadece "tampered"
             // ldstr'den sonraki throw zincirini kes; metodun init
-            // kismini birak (v44 bulgusu: check/init ayni govdede).
+            // kismini birak (v44 bulgusu: check/init ayni bodyde).
             var instrs = tm.Body.Instructions;
             for (int ii = 0; ii < instrs.Count; ii++) {
                 if (instrs[ii].OpCode == OpCodes.Ldstr) {
@@ -353,16 +353,16 @@ int seqIdx = 0;
                     }
                 }
             }
-        Console.WriteLine("tamper-oldur: " + tamperKilled + " | cagri-nop: " + tamperNop);
+        Console.WriteLine("tamper-oldur: " + tamperKilled + " | call-nop: " + tamperNop);
         SkipAtKill: ;
         var wopts = new ModuleWriterOptions(mod);
         wopts.MetadataLogger = DummyLogger.NoThrowInstance;
         // PreserveAll: rid + heap offset hizalamasini korur — AT'nin
-        // CRC kapsam alani bozulmaz (q26 ile dogrulandi, 32767).
+        // CRC kapsam alani bozulmaz (q26 ile verifyndi, 32767).
         wopts.MetadataOptions.Flags |= dnlib.DotNet.Writer.MetadataFlags.PreserveAll;
         wopts.MetadataOptions.Flags |= dnlib.DotNet.Writer.MetadataFlags.KeepOldMaxStack;
         mod.Write(a[2], wopts);
-        Console.WriteLine("[ok] yazildi: " + a[2]);
+        Console.WriteLine("[ok] written: " + a[2]);
         return 0;
     }
 }

@@ -1,4 +1,4 @@
-# AutoReaktör v3 — NecroBit Solved: harvest → rebuild → runnable binary
+# AutoReaktor v3 — NecroBit Solved: harvest → rebuild → runnable binary
 
 v3 is the deep-research release. It closes the gap every existing tool leaves open:
 **NecroBit method bodies** — the layer de4dot, NETReactorSlayer, and Cursed.Reactor
@@ -25,7 +25,7 @@ All three were found by live verification, not by reading code:
    default writer renumbers rows → the VM silently invokes the wrong methods →
    the `EditorPolicy` anti-tamper exception fires from inside the VM loop.
    Fix: `MetadataFlags.PreserveAll` on write. Symptom died instantly.
-2. **Overload resolution by arity retargets calls.** `Array.SetValue(Object, Int32)`
+2. **Overload resdeadtion by arity retargets calls.** `Array.SetValue(Object, Int32)`
    vs `(Object, Int32[])` - same param count, different method. The rebuild picked
    the array overload and died at runtime with `ArgumentNullException: indices`.
    Fix: per-parameter type-name matching from the harvested member signature.
@@ -68,10 +68,10 @@ Tuts4You ".NET Reactor v7.3" unpackme (whoknows, June 2025).
 | `v3/RESEARCH-necrobit.md` | NecroBit 7.3 internal mechanism, evidence-backed |
 | `v3/nbdump.py` | Reflection harvester (policyCreatorDic + fragment IL) |
 | `v3/nbdump-walk/` | nbwalk helper (module-ctor forcing + delegate enumeration) |
-| `v3/nbrebuild/` | dnlib patcher with token-preserving write + sig-matched overload resolution |
+| `v3/nbrebuild/` | dnlib patcher with token-preserving write + sig-matched overload resdeadtion |
 | `v3/test-rebuild/` | verification harness tools (IL dump, subst audit, injectors) |
 
-AutoReaktör: MIT. v3 tools: MIT.
+AutoReaktor: MIT. v3 tools: MIT.
 
 ## Multi-target T-strip (t1–t7) - layer-combination proof
 

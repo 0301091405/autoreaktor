@@ -1,6 +1,6 @@
-// mdread2.cs — dump image içinden dnlib ile tam gövde okuma (nbimage route).
-// Ayrıca: dump'tan kesilen image ile disk dosyasının method-body farkını çıkar.
-// Kullanım: mdread2 <asm> [--dump <image.bin> --imgbase 0x...]
+// mdread2.cs — dump image forden dnlib with tam body okuma (nbimage route).
+// Ayrica: dump'tan keswithn image with disk filesinin method-body farkini cikar.
+// Kullanim: mdread2 <asm> [--dump <image.bin> --imgbase 0x...]
 using System;
 using System.IO;
 using dnlib.DotNet;

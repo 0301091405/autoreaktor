@@ -6,7 +6,7 @@ using dnlib.DotNet;
 class PInv {
     static void Main(string[] args) {
         var mod = ModuleDefMD.Load(args[0]);
-        Console.WriteLine("--- P/Invoke metotlari ---");
+        Console.WriteLine("--- P/Invoke methodlari ---");
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
                 if (m.ImplMap != null) {

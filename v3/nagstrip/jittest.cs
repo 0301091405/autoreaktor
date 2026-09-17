@@ -14,7 +14,7 @@ class JitTest {
                 MethodInfo mi = t.GetMethod("qp1d5IbOJ",
                     BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
                 if (mi == null) continue;
-                Console.WriteLine("metot bulundu: " + t.FullName + "::qp1d5IbOJ");
+                Console.WriteLine("method bulundu: " + t.FullName + "::qp1d5IbOJ");
                 try {
                     RuntimeHelpers.PrepareMethod(mi.MethodHandle);
                     Console.WriteLine("JIT OK");

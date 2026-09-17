@@ -1,6 +1,6 @@
-// refltest.cs — Reflection Compatibility Mode kaniti:
+// refltest.cs — Reflection Compatibility Mode proofi:
 // rebuilt binary'yi reflection ile yukle, tipleri listele,
-// entry cagrisi yapilabilir durumda mi kontrol et.
+// entry call yapilabilir statusda mi kontrol et.
 using System;
 using System.Reflection;
 
@@ -27,7 +27,7 @@ class ReflTest {
             Console.WriteLine($"GetTypes OK: {live} tip reflection-erisilebilir");
             var ep = asm.EntryPoint;
             Console.WriteLine("EntryPoint: " + (ep != null ? ep.ToString() : "YOK"));
-            // reflection invoke DENEME (GUI acar — kapatmayiz, sadece kanit):
+            // reflection invoke DENEME (GUI acar — kapatmayiz, sadece proof):
             if (ep != null && args.Length > 1 && args[1] == "invoke") {
                 Console.WriteLine("invoke denemesi (2sn sonra kapat)...");
                 var t = new System.Threading.Thread(() => ep.Invoke(null, null));

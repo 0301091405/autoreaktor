@@ -1,4 +1,4 @@
-// tlist.cs — modulun tum tiplerini + metot adlarini listele.
+// tlist.cs — modulun tum tiplerini + method adlarini listele.
 using System;
 using System.Linq;
 using dnlib.DotNet;

@@ -1,7 +1,7 @@
 // roundtrip2.cs — PreserveAll ile roundtrip (7.3'ten gelen ders).
-// Eğer PreserveAll yazımı da AV veriyorsa, suç yazıda değil hedefte
-// (Reactor 7.5'in native stub'ı dosya checksum'u yapıyor olabilir —
-//  o durumda rebuild yolu tamamen farklı olmalı: stub'sız yeniden yaz).
+// Eger PreserveAll yazimi da AV veriyorsa, suc yazida not targette
+// (Reactor 7.5'in native stub'i file checksum'u yapiyor olabilir —
+//  o statusda rebuild ydead fully farkli olmali: stub'siz yeniden yaz).
 using System;
 using dnlib.DotNet;
 using dnlib.DotNet.Writer;

@@ -1,13 +1,13 @@
-// nagstrip2.cs — t1 runnable kanıtı v2.
+// nagstrip2.cs — t1 runnable proofi v2.
 //
-// v1 bulgusu: sadece nag-throw'ı ret'lemek yetmedi (0xC0000005).
-// Kalan iki Reactor runtime çağrısı:
+// v1 bulgusu: sadece nag-throw'i ret'lemek yetmedi (0xC0000005).
+// Kalan iki Reactor runtime call:
 //   AoIBWWlDJbaf7LijnA.oMu6jVbdhHEH79DDhU::qp1d5IbOJ()  (anti-tamper check)
 //   UWxvxUSU2ZrCqT9K8B.gttro5yuWySr2hbdEM::OHl6UVo6W() (de4dot'in zaten
-//   ret'lediği ama <Module> cctor'dan çağrılan init)
-// Strateji: her iki metot çağrısını (call opcode) tüm gövde from kaldır
-// VE metotların kendi gövdelerini ret yap. String'ler zaten de4dot'ta
-// çözülmüş (ldstr düz) — decryptora ihtiyaç yok bu hedefte.
+//   ret'ledigi ama <Module> cctor'dan calllan init)
+// Strateji: her iki method callni (call opcode) tum body from kaldir
+// VE methodlarin kendi bodylerini ret yap. String'ler zaten de4dot'ta
+// decrypted (ldstr duz) — decryptora ihtiyac none bu targette.
 using System;
 using System.Collections.Generic;
 using dnlib.DotNet;
@@ -19,8 +19,8 @@ class NagStrip2 {
         if (args.Length < 2) { Console.WriteLine("nagstrip2 <in> <out>"); return 1; }
         var mod = ModuleDefMD.Load(args[0]);
 
-        // 1) Reactor runtime metotlarini bul (govdesi olmayan 42 metot icinden
-        //    cagrilanlar + nag'li olanlar) — isim imzasiyla:
+        // 1) Reactor runtime methodlarini bul (bodysi olmayan 42 method icinden
+        //    calllanlar + nag'li olanlar) — isim imzasiyla:
         var runtimeMethods = new HashSet<IMethod>();
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
@@ -32,8 +32,8 @@ class NagStrip2 {
                             s.Contains("unregistered version")) { isRuntime = true; break; }
                     }
                 }
-                // qp1d5IbOJ: her tipin cctor'unda cagrilan — string decryptor init
-                // olabilir. ONCE kim olduguna bak: cagrilan metotlari topla
+                // qp1d5IbOJ: her tipin cctor'unda calllan — string decryptor init
+                // olabilir. ONCE kim olduguna bak: calllan methodlari topla
                 if (m.Name.String.StartsWith("qp1d5IbOJ")) isRuntime = true;
                 if (m.Name.String.StartsWith("OHl6UVo6W")) isRuntime = true;
                 if (isRuntime) {
@@ -45,9 +45,9 @@ class NagStrip2 {
                 }
             }
         }
-        Console.WriteLine($"runtime metot: {runtimeMethods.Count}");
+        Console.WriteLine($"runtime method: {runtimeMethods.Count}");
 
-        // 2) Tum govdelerden bu metotlara giden CALL'lari kaldir
+        // 2) Tum bodylerden bu methodlara giden CALL'lari kaldir
         int removed = 0;
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {

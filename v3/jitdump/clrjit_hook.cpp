@@ -1,7 +1,7 @@
 // clrjit_hook.cpp — NecroBit evrensel JIT dump rota v3
 // ICorJitCompiler::compileMethod VMT hook; NecroBit'in JIT
-// oncesi cozup sonra sildigi CIL govdesini ILCode pointer'indan
-// yakalar. Kanitli: 7.5.9.1 T4Y hedefi, 238 govde / 7060 IL bayt.
+// oncesi cozup sonra sildigi CIL bodysini ILCode pointer'indan
+// yakalar. Kanitli: 7.5.9.1 T4Y targeti, 238 body / 7060 IL bayt.
 // x86, .NET Framework 4.x clrjit.dll ABI.
 #include <Windows.h>
 #include <cstdint>
@@ -57,40 +57,40 @@ static void writeDump(std::uint32_t token, const CORINFO_METHOD_INFO* info) {
     g_lines.push_back(line);
 }
 
-// token cozumu — MethodDesc trick: CORINFO_METHOD_HANDLE aslinda
+// token sdeadtionu — MethodDesc trick: CORINFO_METHOD_HANDLE aslinda
 // MethodDesc*; x86 .NET Framework'te metodun token rid'si offset
-// 0x0C'de (m_Token alani). Vtable cagrisi GEREKMEZ, salt okuma —
-// SEH korumali. Geçersizse JIT sirasiyla devam.
-// token cozumu — iki rota:
+// 0x0C'de (m_Token alani). Vtable call GEREKMEZ, salt okuma —
+// SEH korumali. Gecersizse JIT sirasiyla continue.
+// token sdeadtionu — iki rota:
 // 1) NB_TOKENMODE=vt (default x64): ICorJitInfo::getMethodDefFromMethod
-//    vtable cagrisi. x64 vtable slot 0xB0 (8 byte/entry * 22).
+//    vtable call. x64 vtable slot 0xB0 (8 byte/entry * 22).
 //    SEH korumali — yanlis slot AV'yi yutar, sentetige duser.
 // 2) NB_TOKENMODE=off (default x86): MethodDesc salt-offset
-//    okumasi (x86 +0x0C kanitli dogru; x64'te chunk yapisindan
+//    okumasi (x86 +0x0C proofli dogru; x64'te chunk yapisindan
 //    dolayi offset okumasi guvenilmez).
 static std::uint32_t resolveRealToken(void* comp, void* ftn) {
     if (!ftn) return 0;
     std::uint32_t tok = 0;
     // ICorJitInfo::getMethodDefFromMethod vtable index = 105
-    // (kanit: xoofx/ManagedJit — .NET Framework 4.7.2 / CoreCLR
+    // (proof: xoofx/ManagedJit — .NET Framework 4.7.2 / CoreCLR
     // corinfo.h sirasi, IntPtr.Size * 105). x86'da offset 420,
     // x64'te 840. x86 +0x0C offset okumasi da zaten dogruydu;
     // vtable rotasi x64'te guvenilir olan TEK yol.
     const char* mode = getenv("NB_TOKENMODE");
 #ifdef _WIN64
-    // x64: slot 105 Framework 4.x clrjit'te dogrulanMADI —
-    // t1 hedefinde 0xC0000005 cokusu yaratti. DEFAULT KAPALI;
+    // x64: slot 105 Framework 4.x clrjit'te verifynMADI —
+    // t1 targetinde 0xC0000005 cokusu yaratti. DEFAULT KAPALI;
     // NB_TOKENMODE=vt ile deneysel acilir.
     bool useVt = (mode && strcmp(mode, "vt") == 0);
 #else
-    // x86: offset okumasi (ftn+0x0C) kanitli; vtable opsiyonel
+    // x86: offset okumasi (ftn+0x0C) proofli; vtable opsiyonel
     bool useVt = (mode && strcmp(mode, "vt") == 0);
 #endif
     if (useVt && comp) {
         // slot: NB_VTSLOT (default 112 — coreclr .NET 8 corinfo.h
         // sayimi: ICorStaticInfo icinde getMethodDefFromMethod
         // oncesi 112 pure-virtual). Framework 4.x icin dogru
-        // slot BILINMIYOR (105 crash kanitli) — ENV ile ver.
+        // slot BILINMIYOR (105 crash proofli) — ENV ile ver.
         int slot = 112;
         const char* vts = getenv("NB_VTSLOT");
         if (vts) slot = atoi(vts);
@@ -126,8 +126,8 @@ static int __stdcall HookedCompileMethod(
     // GIRIS SNAPSHOT: NecroBit, compileMethod'a girmeden hemen once
     // ILCode buffer'ini doldurur ve JIT bitiminde silip gercekle
     // temizler (kaba wipe de olabilir). Cikista okunan buffer bos/
-    // bozuk olabilir — 0-instr govde bunun kaniti. Bu yuzden ILK
-    // SATIRDA, original cagrilmadan kopya al.
+    // bozuk olabilir — 0-instr body bunun proofi. Bu yuzden ILK
+    // SATIRDA, original calllmadan kopya al.
     std::vector<std::uint8_t> pre;
     std::uint32_t preIl = 0, preMaxStack = 0, preEh = 0;
     void* preFtn = nullptr;

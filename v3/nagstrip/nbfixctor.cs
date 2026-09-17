@@ -1,13 +1,13 @@
-// nbfixctor.cs — NecroBit 7.5 sahte-ctor tamiri: base çağrısı enjekte et.
+// nbfixctor.cs — NecroBit 7.5 sahte-ctor tamiri: base call enjekte et.
 //
-// Kanıt zinciri (t7):
-//   1. orijinal sample.exe ÇALIŞIR (GUI açılır)
-//   2. dnlib roundtrip (hiç patch yok) -> NullReferenceException at
-//      Control.set_Text: ctor base Form::.ctor çağırmıyor
-//   3. metadata'da SampleForm::.ctor = nop nop nop ret (imkansız derleyici
-//      çıktısı) -> NecroBit demo sahte gövde bırakmış
-//   4. kaynak kod: default ctor olmalı (base çağrılı)
-// TAMİR: sahte gövdeli metot .ctor ise: call base::.ctor + ret yaz.
+// Proof zinciri (t7):
+//   1. original sample.exe CALISIR (GUI acilir)
+//   2. dnlib roundtrip (hic patch none) -> NullReferenceException at
+//      Control.set_Text: ctor base Form::.ctor cagirmiyor
+//   3. metadata'da SampleForm::.ctor = nop nop nop ret (imkansiz derleyici
+//      ciktisi) -> NecroBit demo sahte body birakmis
+//   4. source kod: default ctor olmali (base callli)
+// TAMIR: sahte bodyli method .ctor ise: call base::.ctor + ret yaz.
 using System;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
@@ -23,7 +23,7 @@ class NbFixCtor {
             foreach (var m in t.Methods) {
                 if (!m.HasBody) continue;
                 var ins = m.Body.Instructions;
-                // sahte govde: <= 6 instr, hicbir call/newobj yok, hepsi nop/ret
+                // sahte body: <= 6 instr, hicbir call/newobj yok, hepsi nop/ret
                 bool fake = ins.Count <= 6;
                 bool anyCall = false;
                 int nonNopRet = 0;
@@ -37,7 +37,7 @@ class NbFixCtor {
 
                 Console.WriteLine($"[cand] {t.FullName}::{m.Name} ins={ins.Count} ctor={m.IsConstructor} static={m.IsStatic}");
                 if (m.IsConstructor && !m.IsStatic) {
-                    // base::.ctor cagrisi enjekte et
+                    // base::.ctor call enjekte et
                     var baseType = t.BaseType;
                     IMethod baseCtor = null;
                     if (baseType != null) {
@@ -52,7 +52,7 @@ class NbFixCtor {
                         }
                     }
                     if (baseCtor != null) {
-                        // govdeyi yeniden kur: ldarg.0; call base::.ctor; ret
+                        // bodyyi yeniden kur: ldarg.0; call base::.ctor; ret
                         for (int k = 0; k < ins.Count; k++) {
                             ins[k].OpCode = OpCodes.Nop;
                             ins[k].Operand = null;

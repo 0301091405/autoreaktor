@@ -1,10 +1,10 @@
 # "modul MethodDef: 1853" + dump token 0x06000003 var ama
 # byToken MISS! RID 3 modulde yok mu? ridcheck.exe rid 3'u
 # BULMUSTU ('?'). Fark: ridcheck nb2'yi taradi; nbilmerge
-# ORIJINALI yukluyor. Orijinalde rid 3 baska bir metot olabilir
-# VEYA rid 3 YOK (obf tip duzeni). Hizli kontrol: orijinalde
+# ORIJINALI yukluyor. Orijinalde rid 3 baska bir method olabilir
+# VEYA rid 3 YOK (obf tip duzeni). Hizli kontrol: originalde
 # rid araliklarini listele + dump'in kucuk tokenlarinin
-# hangileri orijinalde var:
+# hangileri originalde var:
 code = r'''
 using System;
 using System.Collections.Generic;

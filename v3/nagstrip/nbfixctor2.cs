@@ -1,6 +1,6 @@
-// nbfixctor2.cs — v2: external base tipler için GAC'tan ctor import et.
+// nbfixctor2.cs — v2: external base tipler for GAC'tan ctor import et.
 // SampleForm : Form — BaseType TypeRef, ResolveTypeDef null. Cozum:
-// Assembly.Load(baseType.DefinitionAssembly) ile gerçek tip yükle.
+// Assembly.Load(baseType.DefinitionAssembly) with gercek tip yukle.
 using System;
 using System.Linq;
 using dnlib.DotNet;
@@ -86,7 +86,7 @@ class nbfixctor2 {
                     Console.WriteLine($"[skip] import null: {t.FullName}::{m.Name}");
                     continue;
                 }
-                // govde 1 instr (sadece ret) olabilir — genislet
+                // body 1 instr (sadece ret) olabilir — genislet
                 if (ins.Count < 3) {
                     while (ins.Count < 3) ins.Add(OpCodes.Nop.ToInstruction());
                 }
@@ -103,13 +103,13 @@ class nbfixctor2 {
             }
         }
 
-        // NecroBit 7.5: bazı call/newobj instruction'ları NULL operand'lı
-        // (obfuscated token çözülmemiş) — dnlib yazımı patlar. nop'la.
-        // ANCAK VM tiplerinin (obfuscated ad, AoIBWWl... gibi) gövdelerindeki
-        // null-operand'lar VM blob'unun geçerli parçası olabilir — onlara
+        // NecroBit 7.5: bazi call/newobj instruction'lari NULL operand'li
+        // (obfuscated token cozulmemis) — dnlib yazimi patlar. nop'la.
+        // ANCAK VM tiplerinin (obfuscated ad, AoIBWWl... gibi) bodylerindeki
+        // null-operand'lar VM blob'unun gecerli parcasi olabilir — onlara
         // dokunma (t3'te InvalidProgramException dersi). Sadece
-        // kullanıcı tiplerinde (non-obfuscated) nop'la. Ayırt etme:
-        // tip adı C# identifier kurallarına uymayan = obfuscated.
+        // kullanici tiplerinde (non-obfuscated) nop'la. Ayirt etme:
+        // tip adi C# identifier rulelarina uymayan = obfuscated.
         int nulledOps = 0;
         foreach (var t in mod.GetTypes()) {
             bool obfType = !System.Text.RegularExpressions.Regex.IsMatch(
@@ -132,11 +132,11 @@ class nbfixctor2 {
                 }
             }
         }
-        // yazım patlıyorsa: null-operand'lı kalan her instruction'ı atlayamayız.
-        // VM tipi + null operand + kullanıcı tipinden ÇAĞRILIYOR olabilir
-        // (call VM metodu). Bu durumda o call nop'lanmalı — kullanıcı
-        // tarafında. Ek geçiş: tüm metotlarda null-operand'lı InlineMethod
-        // call'ları nop'la AMA sadece tipin kendisi obfuscated DEĞİLSE
+        // yazim patliyorsa: null-operand'li kalan her instruction'i atlayamayiz.
+        // VM tipi + null operand + kullanici tipinden CAGRILIYOR olabilir
+        // (call VM metodu). Bu statusda o call nop'lanmali — kullanici
+        // tarafinda. Ek pass: tum methodlarda null-operand'li InlineMethod
+        // call'lari nop'la AMA sadece tipin kendisi obfuscated DEGILSE
         // VE operand null olan instruction call VEYA ldftn ise.
         int extraNulled = 0;
         foreach (var t in mod.GetTypes()) {
@@ -159,17 +159,17 @@ class nbfixctor2 {
                 }
             }
         }
-        // NULL-OPERAND İÇEREN METOTLARI FORCE-RET YAP (t3b v2):
+        // NULL-OPERAND ICEREN METOTLARI FORCE-RET YAP (t3b v2):
         // Tip silmek "Non-Static Global Method" verdi (module ref koptu).
-        // Bunun yerine: null-operand'lı her METOT govdesini "ret" yap ve
-        // static+public yap — token yerinde kalir, null'lar yok olur,
-        // cagrilan metotlar noop-davranisi (ret) sergiler.
-        // v37: <Module>{guid}::cctor y428a cagrisini global <Module>::cctor
+        // Bunun yerine: null-operand'li her METOT bodysini "ret" yap ve
+        // static+public yap — token yerinde kalir, null'lar yok deadr,
+        // calllan methodlar noop-davranisi (ret) sergiler.
+        // v37: <Module>{guid}::cctor y428a callni global <Module>::cctor
         // BASINA tasi — ayni-thread cctor reentransi m_cec alanlarini bos
         // birakiyordu (qp ldfld m_xxx NRE). Global cctor: y428a; qp; m8DF.
         {
             // v38b: guid tipi otomatik — NecroBit init cctor'u tasiyan:
-            // global cctor'un cagirdigi IKINCI metot y428a-init'tir; guid
+            // global cctor'un cagirdigi IKINCI method y428a-init'tir; guid
             // tipi o metodun DeclaringType'idir.
             var gmodt = mod.GetTypes().FirstOrDefault(t => t.Name == "<Module>" && t.Methods.Any(m => m.Name == ".cctor"));
             var gmodcc = gmodt?.Methods.FirstOrDefault(m => m.Name == ".cctor");
@@ -181,7 +181,7 @@ class nbfixctor2 {
             }
             var gt = y428def != null ? y428def.DeclaringType : null;
             var y428 = y428def;
-            if (gt == null || gmodt == null) Console.WriteLine("v38: tip bulunamadi gt=" + (gt != null) + " gmod=" + (gmodt != null));
+            if (gt == null || gmodt == null) Console.WriteLine("v38: tip not found gt=" + (gt != null) + " gmod=" + (gmodt != null));
             if (gt != null && gmodt != null) {
                 var gcc = gmodt.Methods.FirstOrDefault(m => m.Name == ".cctor");
                 var tcc = gt != null ? gt.Methods.FirstOrDefault(m => m.Name == ".cctor") : null;
@@ -198,12 +198,15 @@ gcc.Body.Instructions.Clear();
                 }
             }
         }
-        // v39: SampleForm::.cctor — qp1d5IbOJ cagrisini kopar (ret).
-        // final15 kaniti: NRE qp icinde, cagiran SampleForm cctor.
-        // qp govdesi cflow+vm karisik 6318 instr; necro-bit akis
-        // bozuk govde. Static init zaten AoIBWWl cctor'ta y428a ile.
+        // v39: SampleForm::.cctor — qp1d5IbOJ callni kopar (ret).
+        // final15 proofi: NRE qp icinde, cagiran SampleForm cctor.
+        // qp bodysi cflow+vm karisik 6318 instr; necro-bit akis
+        // bozuk body. Static init zaten AoIBWWl cctor'ta y428a ile.
         // v39b: form tipi = entry point'in DeclaringType (parametrize)
+        // v47: NB_NOV39=1 -> cctor'a dokunma (T-MAX honest probe:
+        // cctor control-init zincirini baslatiyor olabilir)
         TypeDef formType = mod.EntryPoint != null ? mod.EntryPoint.DeclaringType : null;
+        if (Environment.GetEnvironmentVariable("NB_NOV39") != "1") {
         if (formType != null) {
             var scc = formType.Methods.FirstOrDefault(m => m.Name == ".cctor");
             if (scc != null && scc.HasBody) {
@@ -214,10 +217,11 @@ gcc.Body.Instructions.Clear();
                 Console.WriteLine("v39: " + formType.Name + " cctor -> ret");
             }
         }
-        // v40: qp1d5IbOJ cagrisini BUTUN cctor'lardan kopar (genel).
-        // final15/16 kaniti: <>c__DisplayClass5..cctor de qp cagiriyor.
+        } else { Console.WriteLine("v47: form cctor untouched"); }
+        // v40: qp1d5IbOJ callni BUTUN cctor'lardan kopar (genel).
+        // final15/16 proofi: <>c__DisplayClass5..cctor de qp cagiriyor.
         // Global <Module>::.cctor zaten y428a+ret (v38). Diger cctor'larda
-        // qp'yi silen satir cikar, kalan init akisi korunur.
+        // qp'yi silen line cikar, kalan init akisi korunur.
         int qpCut = 0;
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
@@ -229,21 +233,21 @@ gcc.Body.Instructions.Clear();
                 }
                 foreach (var i in drop) m.Body.Instructions.Remove(i);
                 if (drop.Count > 0) {
-                    // govde tamamen bosaldiysa ret:
+                    // body doneen bosaldiysa ret:
                     if (m.Body.Instructions.Count == 0)
                         m.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
                     qpCut += drop.Count;
                 }
             }
         }
-        Console.WriteLine("v40: qp cagrisi koparilan cctor satiri: " + qpCut);
-        // v43: cctor icindeki DIS-TIP metot cagrililarini kopar (integrity check).
-        // dotqw kaniti: Form1.cctor -> FwBuGMUEyCuTDsoWOn.t8SNRSZCo() -> "tampered" throw.
+        Console.WriteLine("v40: qp-call lines cut from cctor: " + qpCut);
+        // v43: cctor icindeki DIS-TIP method calllilarini kopar (integrity check).
+        // dotqw proofi: Form1.cctor -> FwBuGMUEyCuTDsoWOn.t8SNRSZCo() -> "tampered" throw.
         // Isim-obfuscation temiz harflerden de uretebiliyor (FwBuGMUEyCuTDsoWOn),
-        // regex yeterli degil. Kural: .cctor govdesindeki call/callvirt/newobj
+        // regex yeterli degil. Kural: .cctor bodysindeki call/callvirt/newobj
         // operand'i BASKA bir tipe aitse (declaring != cctor'in tipi ve corlib
         // degilse) at — NecroBit init zaten runtime'ta, kullanici cctor'unda
-        // kalan dis-tip cagrilari check'tir. Govde bosaldiysa ret.
+        // kalan dis-tip calllari check'tir. Govde bosaldiysa ret.
         bool noV43 = Environment.GetEnvironmentVariable("NB_NOV43") == "1";
         int obfCallCut = 0;
         foreach (var t in mod.GetTypes()) {
@@ -257,7 +261,7 @@ gcc.Body.Instructions.Clear();
                     if (!(i.Operand is IMethod im2)) continue;
                     var dt2 = im2.DeclaringType;
                     if (dt2 == null) continue;
-                    // ayni tip icerisinde cagri (normal init) — dokunma:
+                    // ayni tip icerisinde call (normal init) — dokunma:
                     if (dt2 == t) continue;
                     // corlib / bilinen BCL tipleri — dokunma:
                     var asmRef = dt2.DefinitionAssembly;
@@ -270,12 +274,12 @@ gcc.Body.Instructions.Clear();
                 if (drop2.Count > 0) obfCallCut += drop2.Count;
             }
         }
-        Console.WriteLine("v43: dis-tip check cagrisi koparilan: " + obfCallCut);
+        Console.WriteLine("v43: external-type check calls cut: " + obfCallCut);
         // v44: "tampered"/integrity-check stringi iceren METOTLARI force-ret
         // yap (tipi degil — check ve init ayni tipte olabilir, 7.5.9.1'de
-        // 206-metotlu tipin tamamini oldurmek init'i de olduruyor ve NRE
-        // uretiyordu). Sadece stringi TASIYAN metot + o metodu dogrudan
-        // cagiran satirlar hedef alinir.
+        // 206-methodlu tipin doneini oldurmek init'i de olduruyor ve NRE
+        // uretiyordu). Sadece stringi TASIYAN method + o metodu dogrudan
+        // cagiran linelar target alinir.
         int tamperKill = 0, tamperCallCut = 0;
         var tamperMethods = new System.Collections.Generic.List<MethodDef>();
         foreach (var t in mod.GetTypes()) {
@@ -304,8 +308,8 @@ gcc.Body.Instructions.Clear();
             m.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
             m.Body.KeepOldMaxStack = true;
             tamperKill++;
-            // cagiran satirlari nop'la (check void donuslu olsa bile
-            // bazi cagrilar sonucu kullanir — nop stack dengesizligi
+            // cagiran linelari nop'la (check void donuslu olsa bile
+            // bazi calllar sonucu kullanir — nop stack dengesizligi
             // vermez, deger stackte kalir)
             foreach (var t in mod.GetTypes()) {
                 foreach (var m2 in t.Methods) {
@@ -322,9 +326,9 @@ gcc.Body.Instructions.Clear();
             }
         }
         if (tamperKill > 0)
-            Console.WriteLine("v44: check metodu olduruldu: " + tamperKill + " | cagri nop: " + tamperCallCut);
-        // v41: Main cflow sonsuz dongu — temiz WinForms govdesi yaz.
-        // final17 kaniti: %100 CPU, pencere yok, V_6=17 switch IL_02ad loop.
+            Console.WriteLine("v44: check method killed: " + tamperKill + " | calls nopped: " + tamperCallCut);
+        // v41: Main cflow sonsuz dongu — temiz WinForms bodysi yaz.
+        // final17 proofi: %100 CPU, window yok, V_6=17 switch IL_02ad loop.
         {
             var t = formType != null ? formType : mod.GetTypes().FirstOrDefault(x => x.Name == "SampleForm");
             if (t == null) { Console.WriteLine("v41: form tipi yok"); }
@@ -332,7 +336,7 @@ gcc.Body.Instructions.Clear();
             var main = t.Methods.FirstOrDefault(m => m.Name == "Main" && m.HasBody) ?? mod.EntryPoint;
             if (main == null) { Console.WriteLine("v41: main yok"); }
             else {
-            // v41d: orijinal Main'in Application MemberRef'lerini kaydet:
+            // v41d: original Main'in Application MemberRef'lerini kaydet:
             IMethod evs = null, sctrd = null, run = null;
             foreach (var ins in main.Body.Instructions) {
                 if (ins.Operand is IMethod im) {
@@ -351,7 +355,7 @@ gcc.Body.Instructions.Clear();
                 var wfAsm45 = mod.GetAssemblyRefs().FirstOrDefault(a => a.Name == "System.Windows.Forms");
                 if (wfAsm45 != null) {
                     var appRef45 = new TypeRefUser(mod, "System.Windows.Forms", "Application", wfAsm45);
-                    // STATIC metotlar: CreateStatic — CreateInstance thisptr ekler,
+                    // STATIC methodlar: CreateStatic — CreateInstance thisptr ekler,
                     // MissingMethodException'in koku (v45b dersi)
                     var evs45 = new MemberRefUser(mod, "EnableVisualStyles",
                         MethodSig.CreateStatic(mod.CorLibTypes.Void), appRef45);
@@ -374,7 +378,7 @@ gcc.Body.Instructions.Clear();
                         main.Body.Instructions.Add(OpCodes.Call.ToInstruction(run45));
                         main.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
                         main.Body.KeepOldMaxStack = false;
-                        Console.WriteLine("v45: Main -> elle kurulan WinForms akisi (cflow dispatch kirildi)");
+                        Console.WriteLine("v45: Main -> hand-built WinForms flow (cflow dispatch broken)");
                     } else Console.WriteLine("v45: ctor yok — Main dokunulmadi");
                 } else Console.WriteLine("v45: WinForms asmref yok");
             }
@@ -404,36 +408,40 @@ gcc.Body.Instructions.Clear();
             }
         }
         // v41e: SampleForm ctor — Text + Visible yaz (bos form gorunmuyordu).
-        {
-            var sform = formType;
-            if (sform != null) {
-                var sctor = sform.Methods.FirstOrDefault(m => m.Name == ".ctor" && m.HasBody);
-                if (sctor != null) {
-                    var wfAsm = mod.GetAssemblyRefs().FirstOrDefault(a => a.Name == "System.Windows.Forms");
-                    var formRef = new TypeRefUser(mod, "System.Windows.Forms", "Form", wfAsm);
-                    var setText = new MemberRefUser(mod, "set_Text",
-                        MethodSig.CreateInstance(mod.CorLibTypes.Void, mod.CorLibTypes.String), formRef);
-                    var setVisible = new MemberRefUser(mod, "set_Visible",
-                        MethodSig.CreateInstance(mod.CorLibTypes.Void, mod.CorLibTypes.Boolean), formRef);
-                    var showM = new MemberRefUser(mod, "Show",
-                        MethodSig.CreateInstance(mod.CorLibTypes.Void), formRef);
-                    sctor.Body.ExceptionHandlers.Clear();
-                    sctor.Body.Instructions.Clear();
-                    sctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
-                    sctor.Body.Instructions.Add(OpCodes.Call.ToInstruction(
-                        new MemberRefUser(mod, ".ctor", MethodSig.CreateInstance(mod.CorLibTypes.Void), formRef)));
-                    sctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
-                    sctor.Body.Instructions.Add(OpCodes.Ldstr.ToInstruction("sample5"));
-                    sctor.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(setText));
-                    sctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
-                    sctor.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(showM));
-                    sctor.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
-                    Console.WriteLine("v41e: SampleForm ctor = Text(sample5) + Show()");
-                }
+        // v46 DURUSTLUK DERSI: manually overwritek kontrolleri olduruyor — original
+        // form 2 TextBox + register Button yaratirken v41e bos form veriyor.
+        // Yeni rule: NB_NOV46=1 ise manually overwrite YOK — original (NecroBit
+        // ccozuumu) ctor birakilir; sadece Text yaz.
+        if (Environment.GetEnvironmentVariable("NB_NOV46") != "1") {
+        var sform = formType;
+        if (sform != null) {
+            var sctor = sform.Methods.FirstOrDefault(m => m.Name == ".ctor" && m.HasBody);
+            if (sctor != null) {
+                var wfAsm = mod.GetAssemblyRefs().FirstOrDefault(a => a.Name == "System.Windows.Forms");
+                var formRef = new TypeRefUser(mod, "System.Windows.Forms", "Form", wfAsm);
+                var setText = new MemberRefUser(mod, "set_Text",
+                    MethodSig.CreateInstance(mod.CorLibTypes.Void, mod.CorLibTypes.String), formRef);
+                var setVisible = new MemberRefUser(mod, "set_Visible",
+                    MethodSig.CreateInstance(mod.CorLibTypes.Void, mod.CorLibTypes.Boolean), formRef);
+                var showM = new MemberRefUser(mod, "Show",
+                    MethodSig.CreateInstance(mod.CorLibTypes.Void), formRef);
+                sctor.Body.ExceptionHandlers.Clear();
+                sctor.Body.Instructions.Clear();
+                sctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
+                sctor.Body.Instructions.Add(OpCodes.Call.ToInstruction(
+                    new MemberRefUser(mod, ".ctor", MethodSig.CreateInstance(mod.CorLibTypes.Void), formRef)));
+                sctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
+                sctor.Body.Instructions.Add(OpCodes.Ldstr.ToInstruction("sample5"));
+                sctor.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(setText));
+                sctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
+                sctor.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(showM));
+                sctor.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
+                Console.WriteLine("v41e: SampleForm ctor = Text(sample5) + Show()");
             }
         }
+        } else { Console.WriteLine("v46: manually ctor overwrite OFF — original ctor preserved"); }
         // v16: Eziriz nag-check taramasi — ldstr "Eziriz" iceren her
-        // metot nag-check'tir; govdesini ret yap (throw yolu kapanir).
+        // method nag-check'tir; bodysini ret yap (throw ydead kapanir).
         int nagKilled = 0;
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
@@ -450,13 +458,13 @@ gcc.Body.Instructions.Clear();
                 nagKilled++;
             }
         }
-        Console.WriteLine($"nag kapatildi: {nagKilled}");
+        Console.WriteLine($"nag disabled: {nagKilled}");
 
         // v17: ZORLA-FORCE-RET — rcheck'in null-operand listesinin TAMAMI
-        // (18 metot, t3b). hasNull kosulu KALDIRILDI: dnlib yazimi null
+        // (18 method, t3b). hasNull kosulu KALDIRILDI: dnlib yazimi null
         // operand'i kendi urettigi token'la dolduruyor, yazim SONRASI
         // hasNull artik true YAKALAMIYOR. Liste isim bazli.
-        // HARIC TUTULANLAR (ham-govde post-inject ile kurtarilir):
+        // HARIC TUTULANLAR (ham-body post-inject ile kurtarilir):
         //   qp1d5IbOJ (hook kurucu — asla dokunma),
         //   y428a5a7 (alan-init, 5702B — .nbinj ham inject),
         //   m8DF140CC1AA41F4 (274B — .nbinj ham inject),
@@ -492,26 +500,26 @@ gcc.Body.Instructions.Clear();
                 forceRetCount++;
             }
         }
-        Console.WriteLine($"force-ret metot: {forceRetCount}");
+        Console.WriteLine($"force-ret method: {forceRetCount}");
 
         // v18: yazim-oncesi null-operand kurtarma — forceKill/ham-inject
-        // DISINDAKI metotlardaki null call/field'lara GECICI dummy token
-        // bagla ki dnlib yazabilsin. (Ham-inject sonra bu govdeleri zaten
-        // orijinal byte'larla ezecek; gecici dummy sadece yazimi kurtarir.)
+        // DISINDAKI methodlardaki null call/field'lara GECICI dummy token
+        // bagla ki dnlib yazabilsin. (Ham-inject sonra bu bodyleri zaten
+        // original byte'larla ezecek; gecici dummy sadece yazimi kurtarir.)
         // v19: null-operand'li instruction'lari TAMAMEN SIL (nop degil).
-        // NecroBit sahte-govde null-call'lari atildiginda kalan akis
-        // ANLAMLI oluyor (KCFlcDdR6L: ldarg.0+ldfld+callvirt+ret).
-        // Metot tamamen bosaliyorsa donus-tipine gore dummy+ret.
+        // NecroBit sahte-body null-call'lari atildiginda kalan akis
+        // ANLAMLI deadyor (KCFlcDdR6L: ldarg.0+ldfld+callvirt+ret).
+        // Metot doneen bosaliyorsa donus-tipine gore dummy+ret.
         int nullRemoved = 0, hollowFilled = 0;
         // NB_NOSIL=1: null-operand silme atlanir (NecroBit runtime-restore
-        // sinifi hedeflerde — 7.5.9.1, dotqw — null-sil init cagri zincirini
-        // kiriyor; restore bekleyen govde bozuluyor). Sadece check-strip
+        // sinifi targetlerde — 7.5.9.1, dotqw — null-wipe init call zincirini
+        // kiriyor; restore bekleyen body bozuluyor). Sadece check-strip
         // (v43/v44) uygulanir.
         bool noSil = Environment.GetEnvironmentVariable("NB_NOSIL") == "1";
         if (noSil) {
-            // v45: NB_NOSIL modunda null operandlar SİLİNMEZ ama dnlib yine de
+            // v45: NB_NOSIL modunda null operandlar SILINMEZ ama dnlib yine de
             // null operand yazamaz -> gecici dummy MemberRef/MemberRefUser bagla.
-            // Davranis: NecroBit runtime-restore cagriyi zaten ele gecirir;
+            // Davranis: NecroBit runtime-restore callyi zaten ele gecirir;
             // dummy token sadece yazimi saglar. v18'in genisletilmisi.
             int dummyBound = 0;
             var dummyMrr = new MemberRefUser(mod, "d",
@@ -544,7 +552,7 @@ gcc.Body.Instructions.Clear();
                 if (m.Name.String == "qp1d5IbOJ" || m.Name.String == "m8DF140CC1AA41F4" ||
                     m.Name.String == "Main") continue;
                 if (m.Name.String == "c6eqX6NsSy") {
-                    // sifreli call IL_0002 — akista atlanir, NOP'la:
+                    // cipherli call IL_0002 — akista atlanir, NOP'la:
                     foreach (var i in m.Body.Instructions) {
                         if (i.OpCode == OpCodes.Call && !(i.Operand is IMethod)) {
                             i.OpCode = OpCodes.Nop; i.Operand = null;
@@ -552,8 +560,8 @@ gcc.Body.Instructions.Clear();
                     }
                 }
                 var toRemove = new System.Collections.Generic.List<Instruction>();
-                // v42: branch/exception-handler hedefi olup olmadigini once hesapla —
-                // hedef instruction SILINEMEZ (ModuleWriterException), NOP'lanir.
+                // v42: branch/exception-handler targeti deadp olmadigini once hesapla —
+                // target instruction SILINEMEZ (ModuleWriterException), NOP'lanir.
                 var branchTargets = new System.Collections.Generic.HashSet<dnlib.DotNet.Emit.Instruction>();
                 foreach (var i in m.Body.Instructions) {
                     if (i.Operand is dnlib.DotNet.Emit.Instruction t1) branchTargets.Add(t1);
@@ -580,7 +588,7 @@ gcc.Body.Instructions.Clear();
                         ot == OperandType.InlineType || ot == OperandType.InlineTok ||
                         ot == OperandType.InlineString || ot == OperandType.InlineSig) {
                         if (branchTargets.Contains(i)) {
-                            // hedef instruction — silme, nop'la (v42 safe)
+                            // target instruction — silme, nop'la (v42 safe)
                             i.OpCode = OpCodes.Nop; i.Operand = null;
                         } else {
                             toRemove.Add(i);
@@ -592,8 +600,8 @@ gcc.Body.Instructions.Clear();
                     m.Body.Instructions[idx] = OpCodes.Nop.ToInstruction();
                 }
                 nullRemoved += toRemove.Count;
-                // br.s hedefleri bozuldiysa dnlib duzeltir (KeepOldMaxStack).
-                // bosalan metot: dummy + ret
+                // br.s targetleri bozuldiysa dnlib duzeltir (KeepOldMaxStack).
+                // freed method: dummy + ret
                 if (m.Body.Instructions.Count == 0 ||
                     (m.Body.Instructions.Count == 1 && m.Body.Instructions[0].OpCode == OpCodes.Ret)) {
                     m.Body.Instructions.Clear();
@@ -610,9 +618,10 @@ gcc.Body.Instructions.Clear();
                 }
             }
         }
-        Console.WriteLine($"null-sil: {nullRemoved}, bosalan-dummy: {hollowFilled}");
+        Console.WriteLine($"null-wiped: {nullRemoved}, freed-dummy: {hollowFilled}");
         } // end NB_NOSIL guard
         // DEBUG: yazim-oncesi kalan supheli operand'lar:
+        int argBound = 0;
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
                 if (!m.HasBody) continue;
@@ -620,18 +629,32 @@ gcc.Body.Instructions.Clear();
                     if (i.Operand == null && i.OpCode.OperandType != OperandType.InlineNone &&
                         i.OpCode.OperandType != OperandType.ShortInlineBrTarget &&
                         i.OpCode.OperandType != OperandType.InlineBrTarget) {
-                        Console.WriteLine($"[supheli] {m.FullName} :: {i.OpCode.Name} operand=null");
+                        // v48: starg.s/ldarg.s/ldarga.s null operand -> first param bind.
+                        // Stub body has unresolved operands; bind to param[0] so the
+                        // writer does not blow up. v48b: ldarg.s is the real opcode name
+                        // (0x10) — starg.s was a wrong guess; ldarg/ldarga/starg too.
+                        var opname = i.OpCode.Name;
+                        if (opname == "starg.s" || opname == "ldarg.s" || opname == "ldarga.s" ||
+                            opname == "starg" || opname == "ldarg" || opname == "ldarga") {
+                            if (m.Parameters.Count > 0) { i.Operand = m.Parameters[0]; argBound++; continue; }
+                            // v48c: zero-param method + arg opcode = dead stub remnant;
+                            // nop it out so the writer does not choke.
+                            i.OpCode = OpCodes.Nop; i.Operand = null; argBound++;
+                            continue;
+                        }
+                        Console.WriteLine($"[suspect] {m.FullName} :: {i.OpCode.Name} operand=null");
                     }
                 }
             }
         }
-        // <Module>.cctor + m8DF (nag-check) tamamen kapat:
+        Console.WriteLine($"v48: arg-bound: {argBound}");
+        // <Module>.cctor + m8DF (nag-check) fully disabled:
         // cctor -> ret; m8DF -> ret. ctor fix'li oldugu icin guvenli.
         // NecroBit runtime (VM792/gttro/null-call'lar) cctor'suz da
-        // kendi init'ini Main icerisinde yapar — T1'de kanitlandi.
+        // kendi init'ini Main icerisinde yapar — T1'de prooflandi.
         // v15: init-kill KALDIRILDI — NecroBit hook kurulumu qp1d5IbOJ + cctor zincirinde;
         // kopartilinca runtime body-replace yapilmiyor, JIT gecersiz IL goruyor.
-        Console.WriteLine($"ikinci gecis nop: {extraNulled}");
+        Console.WriteLine($"second pass nop: {extraNulled}");
 
         // maxstack yeniden hesaplat (t3b: KeepOldMaxStack qvU94'te
         // InvalidProgramException uretti — eski deger tasi yanlis)

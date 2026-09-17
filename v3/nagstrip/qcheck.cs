@@ -1,4 +1,4 @@
-// qcheck.cs — tek metotun IL dump'u (packed vs rebuilt diff icin).
+// qcheck.cs — tek methodun IL dump'u (packed vs rebuilt diff icin).
 using System;
 using System.Linq;
 using dnlib.DotNet;
@@ -7,7 +7,7 @@ using dnlib.DotNet.Emit;
 class QCheck {
     static void Main(string[] args) {
         var mod = ModuleDefMD.Load(args[0]);
-        string needle = args[1]; // metot ad parcasi
+        string needle = args[1]; // method ad parcasi
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
                 if (!m.FullName.Contains(needle)) continue;
