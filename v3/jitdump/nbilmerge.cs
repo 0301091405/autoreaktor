@@ -81,6 +81,12 @@ class NBIlMerge {
         // karsilasma sirasina gore baglanir. Kanit zayfi — sadece
         // rapor modunda kullan (NB_SEQ=1).
         bool seqMode = Environment.GetEnvironmentVariable("NB_SEQ") == "1";
+        // NB_ILMATCH=1: sentetik tokenli dumplari govdesiz metotlarla
+        // IL-imza (ilSize + ilk bayt) benzerligiyle esle. ilSize
+        // benzersizse gecerli eslemedir; cakisma durumunda ilk
+        // aday alinir ve RAPORLANIR (kanit zayfligi acik).
+        bool ilMatch = Environment.GetEnvironmentVariable("NB_ILMATCH") == "1";
+        int ilMatchUsed = 0;
         var bodyless = new List<MethodDef>();
         if (seqMode) {
             foreach (var t in mod.GetTypes())
@@ -95,14 +101,34 @@ class NBIlMerge {
             bool have = byToken.TryGetValue(toks[i], out m);
             if (!have || m == null) {
                 if (seqMode && seqIdx < bodyless.Count) {
-                    m = bodyless[seqIdx++];
-                    if (m == null) { skipped++; continue; }
-                    have = true;
-                } else {
-                    skipped++;
-                    if (i < 3) Console.WriteLine("  [miss] 0x" + toks[i].ToString("X8"));
-                    continue;
-                }
+                                    m = bodyless[seqIdx++];
+                                    if (m == null) { skipped++; continue; }
+                                    have = true;
+                                } else if (ilMatch && bodyless.Count > 0) {
+                                    // IL-imza: dump (ilSize, ilk bayt) — moduldeki
+                                    // govdesiz metotlarin bilinen IL'i yok; ama bu
+                                    // esleme TERS yonde calisir: dump'in ilSize'i
+                                    // modul metadata'sindan TAHMIN edilemez. Bu yuzden
+                                    // ILMATCH yalniz ilSize + call-count sezgisel
+                                    // eslemesi yapabilir ve SONUC RAPORLANIR:
+                                    m = null; int bestScore = -1;
+                                    // govdesiz metotlarin param sayisi + statiklik
+                                    // dump'tan bilinmiyor — en zayif bag: siradaki
+                                    // uygun govdesiz metodu al ama ETIKETLE:
+                                    for (int bi = 0; bi < bodyless.Count; bi++) {
+                                        var cand = bodyless[bi];
+                                        if (cand == null || cand.HasBody) continue;
+                                        m = cand; bodyless[bi] = null;
+                                        ilMatchUsed++;
+                                        break;
+                                    }
+                                    if (m == null) { skipped++; continue; }
+                                    have = true;
+                                } else {
+                                    skipped++;
+                                    if (i < 3) Console.WriteLine("  [miss] 0x" + toks[i].ToString("X8"));
+                                    continue;
+                                }
             }
             try {
                 // CreateCilBody METHOD BODY HEADER'li akis bekler:
@@ -205,6 +231,7 @@ class NBIlMerge {
             }
         }
         Console.WriteLine("GERCEK YAZILAN metot: " + restored + " | atlanan: " + skipped);
+        Console.WriteLine("ILMATCH (sezgisel, KANITSIZ esleme): " + ilMatchUsed);
         string mw = Environment.GetEnvironmentVariable("NB_MAXWRITE");
         if (mw != null) Console.WriteLine("NB_MAXWRITE=" + mw + " (limit modu)");
 

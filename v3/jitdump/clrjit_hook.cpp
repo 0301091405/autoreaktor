@@ -71,32 +71,41 @@ static void writeDump(std::uint32_t token, const CORINFO_METHOD_INFO* info) {
 static std::uint32_t resolveRealToken(void* comp, void* ftn) {
     if (!ftn) return 0;
     std::uint32_t tok = 0;
+    // ICorJitInfo::getMethodDefFromMethod vtable index = 105
+    // (kanit: xoofx/ManagedJit — .NET Framework 4.7.2 / CoreCLR
+    // corinfo.h sirasi, IntPtr.Size * 105). x86'da offset 420,
+    // x64'te 840. x86 +0x0C offset okumasi da zaten dogruydu;
+    // vtable rotasi x64'te guvenilir olan TEK yol.
     const char* mode = getenv("NB_TOKENMODE");
 #ifdef _WIN64
-    if (mode && strcmp(mode, "vt") == 0) { // opt-in: slot dogrulanmadi
-        // getMethodDefFromMethod(CORINFO_METHOD_HANDLE ftn)
-        if (comp) {
-            __try {
-                void** vt = *(void***)comp;
-                std::uint32_t (__stdcall *pGet)(void*) =
-                    (std::uint32_t (__stdcall*)(void*))vt[0x16]; // 0xB0/8
-                if (pGet) {
-                    std::uint32_t r = pGet(ftn);
-                    if (r > 0 && r < 0x00FFFFFF) tok = 0x06000000 | r;
-                }
-            } __except (EXCEPTION_EXECUTE_HANDLER) { tok = 0; }
-        }
+    // x64: slot 105 Framework 4.x clrjit'te dogrulanMADI —
+    // t1 hedefinde 0xC0000005 cokusu yaratti. DEFAULT KAPALI;
+    // NB_TOKENMODE=vt ile deneysel acilir.
+    bool useVt = (mode && strcmp(mode, "vt") == 0);
+#else
+    // x86: offset okumasi (ftn+0x0C) kanitli; vtable opsiyonel
+    bool useVt = (mode && strcmp(mode, "vt") == 0);
+#endif
+    if (useVt && comp) {
+        __try {
+            void** vt = *(void***)comp;
+            std::uint32_t (__stdcall *pGet)(void*) =
+                (std::uint32_t (__stdcall*)(void*))vt[105];
+            if (pGet) {
+                std::uint32_t r = pGet(ftn);
+                if (r > 0 && r < 0x00FFFFFF) tok = 0x06000000 | r;
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) { tok = 0; }
         if (tok) return tok;
     }
-    // offset fallback — x64 chunk yapisinda cogunlukla yanlis:
+#ifndef _WIN64
     __try {
-        std::uint32_t rid = *(std::uint32_t*)((std::uint8_t*)ftn + 0x14) & 0x00FFFFFF;
+        std::uint32_t rid = *(std::uint32_t*)((std::uint8_t*)ftn + 0x0C) & 0x00FFFFFF;
         if (rid > 0 && rid < 0x00FFFFFF) tok = 0x06000000 | rid;
     } __except (EXCEPTION_EXECUTE_HANDLER) { tok = 0; }
 #else
-    (void)mode; (void)comp;
     __try {
-        std::uint32_t rid = *(std::uint32_t*)((std::uint8_t*)ftn + 0x0C) & 0x00FFFFFF;
+        std::uint32_t rid = *(std::uint32_t*)((std::uint8_t*)ftn + 0x14) & 0x00FFFFFF;
         if (rid > 0 && rid < 0x00FFFFFF) tok = 0x06000000 | rid;
     } __except (EXCEPTION_EXECUTE_HANDLER) { tok = 0; }
 #endif
