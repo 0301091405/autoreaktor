@@ -27,10 +27,17 @@ Proof (real-world targets, not samples):
 
 | Target | hook | bodies captured | total CIL |
 |---|---|---|---|
-| Tuts4You ".NET Reactor v7.5.9.1" (Apr 2026, NecroBit + custom anti-tamper) | HOOK-OK | 238 | 7,060 bytes |
+| Tuts4You ".NET Reactor v7.5.9.1" (Apr 2026, NecroBit + custom anti-tamper) | HOOK-OK | 199 | 5,439 bytes |
 | Tuts4You ".NET Reactor v7.3" (embedded DLLs + CV) | HOOK-OK | 66 | 1,925 bytes |
+| Tuts4You t1 sample (AnyCPU → x64 process) | HOOK-OK | 84 | 19,308 bytes |
 
-Honest limits of the current stage: dumped bodies are keyed by JIT order (real metadata-token resolution is stubbed and opt-in via NB_REALTOKEN=1 — the ICorJitInfo slot offset is not verified, so it stays off), the merge stage currently proves body transport rather than full write-back, and NecroBit builds that skip the clrjit path entirely (e.g. dotqw 7.x, whose HOOK-OK marker shows an unhooked clrjit vtable — no NecroBit JIT shim present) legitimately dump 0 bodies. The anti-tamper-vs-init interlock that nbfixctor2 v44 exposed experimentally (killing the "tampered" throw kills the initializer → NRE) is exactly why the JIT route exists: it bypasses the check/init question entirely instead of patching it.
+Two hard findings from the write-back work, kept honest:
+
+1. **Body write-back into the PE is architecturally blocked on NecroBit RVA=0 methods.** On the 7.5.9.1 target the protected methods carry RVA=0 — the body exists only in JIT-decrypted memory, never on disk. dnlib's writer round-trip trips the runtime anti-tamper CRC even with `PreserveAll` + `KeepOldMaxStack` + zero body changes (verified: a no-op rewrite of a working nb2 already throws "tampered"), and byte-patching in place can't work when there is no body on disk to patch. The deliverable for NecroBit targets is therefore the pair: **nb2 (runs, AT-checks disabled) + JIT-dumped bodies (full CIL visibility)** — not a single rewritten PE.
+
+2. **Where a body DOES exist in the PE, the merge works end-to-end.** nbilmerge v6 resolved dnlib's `MethodBodyReader` contract (needs a tiny/fat method-body header — fat flags `0x3013`, not `0x3011`), back-filled locals from raw CIL (short/long ldloc-stloc forms), and wrote 41/41 in-range-token bodies into a PE the JIT accepts (InvalidProgramException gone). The 158 remaining dumps carry MethodDesc chunk-artifact tokens (offset read is chunk-relative in coreclr, not a flat +0x0C); on x86 the flat read happens to resolve 41 correctly, on x64 it doesn't — the ICorJitInfo vtable slot for `getMethodDefFromMethod` is unverified on x64, so the vt-call stays opt-in (`NB_TOKENMODE=vt`) and x64 dumps stay sequence-keyed (`NB_SEQ=1` merge is experimental — a sequence-matched t1 restore threw FieldAccessException, proving sequence ≠ metadata order).
+
+Target classification now happens before injection: unmanaged exes are rejected (exit 3), AnyCPU is routed to the x64 DLL/launcher (the t1 0-body failure was a 32-bit DLL in a 64-bit process), and ReadyToRun builds are flagged as clrjit-invisible.
 
 ## Pipeline
 

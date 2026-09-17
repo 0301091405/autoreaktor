@@ -36,6 +36,45 @@ def pe_machine(path):
     return mach  # 0x14c x86, 0x8664 x64
 
 
+def corflags_of(path):
+    """(flags, yonetilen_mi) — AnyCPU/R2R/native tespiti icin."""
+    d = open(path, "rb").read(65536)
+    pe = struct.unpack_from("<I", d, 0x3C)[0]
+    opt = pe + 24
+    magic = struct.unpack_from("<H", d, opt)[0]
+    ddoff = opt + (96 if magic == 0x10B else 112)
+    cdir_rva = struct.unpack_from("<I", d, ddoff + 14 * 8)[0]
+    if not cdir_rva or cdir_rva >= len(d):
+        return None, False
+    nsec = struct.unpack_from("<H", d, pe + 6)[0]
+    opt_size = struct.unpack_from("<H", d, pe + 20)[0]
+    sec_tab = pe + 24 + opt_size
+    off = None
+    for i in range(nsec):
+        s = sec_tab + i * 40
+        vaddr = struct.unpack_from("<I", d, s + 12)[0]
+        vsize = struct.unpack_from("<I", d, s + 8)[0]
+        raw = struct.unpack_from("<I", d, s + 20)[0]
+        if vaddr <= cdir_rva < vaddr + vsize:
+            off = cdir_rva - vaddr + raw
+            break
+    if off is None:
+        return None, False
+    flags = struct.unpack_from("<I", d, off + 16)[0]
+    return flags, True
+
+
+def is_readytorun(path):
+    """R2R (ReadyToRun) hedeflerde clrjit KULLANILMAZ — hook islevsiz.
+    R2R debug directory tipi 0x11 (IMAGE_DIRECTORY_TYPE_EXCEPTION)
+    yaninda COR_RSDS degil R2R entry bulunur; basit esik: debug dir
+    tip 0x11 varsa + .rsrc degil 'RTR' isareti. Pratik tarama:
+    dosyada 'ReadyToRun' metadata bolumu aramak yerine debug
+    directory tiplerinden 0x10 (REPRO) / R2R header kontrolu."""
+    d = open(path, "rb").read(65536)
+    return b"RTR" not in d and (b"ReadyToRun" in d or b"readytorun" in d.lower())
+
+
 def build_launcher(arch, out_dir):
     """nbjit_launch.exe'yi hedef bitness'inde derler (x86 x86 surecler icin sart)."""
     src = HERE / "nbjit_launch.c"
@@ -73,7 +112,23 @@ def main():
     out = Path(args.out).resolve() if args.out else tgt.parent / "jitdump"
     out.mkdir(exist_ok=True)
 
-    arch = "x86" if pe_machine(tgt) == 0x14C else "x64"
+    # --- hedef siniflandirmasi (genellik icin kritik) ---
+    flags, managed = corflags_of(tgt)
+    if not managed:
+        print("[!] yonetilmeyen exe (no CLR) — JIT dump kapsam disi")
+        return 3
+    if flags is not None and not (flags & 0x2) and not (flags & 0x10000):
+        # 32BITREQUIRED(0x2) yok VE 32BITPREF(0x10000) yok = AnyCPU
+        # -> 64-bit OS'ta x64 surec; x86 DLL asla yuklenmez (t1
+        # hatasinin kaynagi). x64 rota zorunlu:
+        arch = "x64"
+        print("[bilgi] AnyCPU — 64-bit surec modu")
+    elif is_readytorun(tgt):
+        print("[!] ReadyToRun — clrjit kullanilmiyor, JIT dump islevsiz")
+        return 3
+    else:
+        arch = "x86" if pe_machine(tgt) == 0x14C else "x64"
+
     dll = (HERE / ("clrjit_dump32.dll" if arch == "x86" else "clrjit_dump64.dll")).resolve()
     if not dll.exists():
         print(f"[!] {dll.name} yok — once build"); return 1

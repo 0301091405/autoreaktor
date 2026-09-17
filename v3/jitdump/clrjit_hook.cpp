@@ -57,17 +57,95 @@ static void writeDump(std::uint32_t token, const CORINFO_METHOD_INFO* info) {
     g_lines.push_back(line);
 }
 
+// token cozumu — MethodDesc trick: CORINFO_METHOD_HANDLE aslinda
+// MethodDesc*; x86 .NET Framework'te metodun token rid'si offset
+// 0x0C'de (m_Token alani). Vtable cagrisi GEREKMEZ, salt okuma —
+// SEH korumali. Geçersizse JIT sirasiyla devam.
+// token cozumu — iki rota:
+// 1) NB_TOKENMODE=vt (default x64): ICorJitInfo::getMethodDefFromMethod
+//    vtable cagrisi. x64 vtable slot 0xB0 (8 byte/entry * 22).
+//    SEH korumali — yanlis slot AV'yi yutar, sentetige duser.
+// 2) NB_TOKENMODE=off (default x86): MethodDesc salt-offset
+//    okumasi (x86 +0x0C kanitli dogru; x64'te chunk yapisindan
+//    dolayi offset okumasi guvenilmez).
+static std::uint32_t resolveRealToken(void* comp, void* ftn) {
+    if (!ftn) return 0;
+    std::uint32_t tok = 0;
+    const char* mode = getenv("NB_TOKENMODE");
+#ifdef _WIN64
+    if (mode && strcmp(mode, "vt") == 0) { // opt-in: slot dogrulanmadi
+        // getMethodDefFromMethod(CORINFO_METHOD_HANDLE ftn)
+        if (comp) {
+            __try {
+                void** vt = *(void***)comp;
+                std::uint32_t (__stdcall *pGet)(void*) =
+                    (std::uint32_t (__stdcall*)(void*))vt[0x16]; // 0xB0/8
+                if (pGet) {
+                    std::uint32_t r = pGet(ftn);
+                    if (r > 0 && r < 0x00FFFFFF) tok = 0x06000000 | r;
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) { tok = 0; }
+        }
+        if (tok) return tok;
+    }
+    // offset fallback — x64 chunk yapisinda cogunlukla yanlis:
+    __try {
+        std::uint32_t rid = *(std::uint32_t*)((std::uint8_t*)ftn + 0x14) & 0x00FFFFFF;
+        if (rid > 0 && rid < 0x00FFFFFF) tok = 0x06000000 | rid;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { tok = 0; }
+#else
+    (void)mode; (void)comp;
+    __try {
+        std::uint32_t rid = *(std::uint32_t*)((std::uint8_t*)ftn + 0x0C) & 0x00FFFFFF;
+        if (rid > 0 && rid < 0x00FFFFFF) tok = 0x06000000 | rid;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { tok = 0; }
+#endif
+    return tok;
+}
+
 static int __stdcall HookedCompileMethod(
     void* self, void* comp, CORINFO_METHOD_INFO* info, unsigned flags,
     std::uint8_t** nativeEntry, std::uint32_t* nativeSize)
 {
-    // NecroBit hook'u (zincirlendiyse) veya gercek JIT calisir;
-    // ILCode bu noktada NecroBit tarafindan COZULMUS halde.
-    int r = ((CompileFn)g_origCompile)(self, comp, info, flags, nativeEntry, nativeSize);
+    // GIRIS SNAPSHOT: NecroBit, compileMethod'a girmeden hemen once
+    // ILCode buffer'ini doldurur ve JIT bitiminde silip gercekle
+    // temizler (kaba wipe de olabilir). Cikista okunan buffer bos/
+    // bozuk olabilir — 0-instr govde bunun kaniti. Bu yuzden ILK
+    // SATIRDA, original cagrilmadan kopya al.
+    std::vector<std::uint8_t> pre;
+    std::uint32_t preIl = 0, preMaxStack = 0, preEh = 0;
+    void* preFtn = nullptr;
     if (info && info->ILCode && info->ILCodeSize > 0 && info->ILCodeSize < (4u << 20)) {
-        std::uint32_t tok = ++g_tokCounter; // JIT sirasi; token eslemesi
-        // write-back katmaninda IL-pattern matching ile yapilir (nbilmerge)
-        writeDump(tok, info);
+        preIl = info->ILCodeSize;
+        preMaxStack = info->maxStack;
+        preEh = info->EHcount;
+        preFtn = info->ftn;
+        pre.assign(info->ILCode, info->ILCode + info->ILCodeSize);
+    }
+    int r = ((CompileFn)g_origCompile)(self, comp, info, flags, nativeEntry, nativeSize);
+    if (!pre.empty()) {
+        std::uint32_t real = resolveRealToken(comp, preFtn);
+        std::uint32_t tok = real ? real : ++g_tokCounter;
+        // gecici CORINFO kopyasi: writeDump info->ILCode okur —
+        // pre-dumped buffer'i geri yazmak yerine dogrudan yaz:
+        std::lock_guard<std::mutex> lk(g_mtx);
+        std::uint64_t key = (std::uint64_t)tok << 32 | preIl;
+        if (g_seen.insert(key).second) {
+            char path[MAX_PATH];
+            std::snprintf(path, sizeof(path), "%s\\m_%08X.bin", g_outDir, tok);
+            FILE* f = nullptr;
+            if (fopen_s(&f, path, "wb") == 0 && f) {
+                std::uint32_t hdr[5] = { tok, preIl, preMaxStack, preEh, 0 };
+                fwrite(hdr, 1, sizeof(hdr), f);
+                fwrite(pre.data(), 1, preIl, f);
+                fclose(f);
+                std::lock_guard<std::mutex> lk2(g_lines_mtx);
+                char line[160];
+                std::snprintf(line, sizeof(line), "token=0x%08X il=%u maxStack=%u eh=%u PRE",
+                               tok, preIl, preMaxStack, preEh);
+                g_lines.push_back(line);
+            }
+        }
     }
     return r;
 }
