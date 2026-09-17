@@ -35,3 +35,11 @@ v3/multi-target/real-targets/c_*.zip
 v3/multi-target/real-targets/c7_dotqw/
 v3/multi-target/real-targets/c8_lostchall/
 v3/multi-target/real-targets/c9_goodlife/
+
+# JIT-dump / test artifacts
+*.obj
+nbjit_launch.exe
+t1v44.exe
+t4v44.exe
+findtamper.exe
+jitdump2/
