@@ -181,9 +181,11 @@ class NbFixCtor2 {
                 var tcc = gt != null ? gt.Methods.FirstOrDefault(m => m.Name == ".cctor") : null;
                 Console.WriteLine("v38: gcc=" + (gcc != null) + " tcc=" + (tcc != null) + " y428=" + (y428 != null));
                 if (gcc != null && tcc != null && y428 != null) {
-                    gcc.Body.Instructions.Clear();
+                    gcc.Body.ExceptionHandlers.Clear();
+gcc.Body.Instructions.Clear();
                     gcc.Body.Instructions.Add(OpCodes.Call.ToInstruction(y428));
                     gcc.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
+                    tcc.Body.ExceptionHandlers.Clear();
                     tcc.Body.Instructions.Clear();
                     tcc.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
                     Console.WriteLine("v37: global cctor = y428a; ret — guid cctor ret");
@@ -199,6 +201,7 @@ class NbFixCtor2 {
         if (formType != null) {
             var scc = formType.Methods.FirstOrDefault(m => m.Name == ".cctor");
             if (scc != null && scc.HasBody) {
+                scc.Body.ExceptionHandlers.Clear();
                 scc.Body.Instructions.Clear();
                 scc.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
                 scc.Body.KeepOldMaxStack = true;
@@ -228,6 +231,38 @@ class NbFixCtor2 {
             }
         }
         Console.WriteLine("v40: qp cagrisi koparilan cctor satiri: " + qpCut);
+        // v43: cctor icindeki DIS-TIP metot cagrililarini kopar (integrity check).
+        // dotqw kaniti: Form1.cctor -> FwBuGMUEyCuTDsoWOn.t8SNRSZCo() -> "tampered" throw.
+        // Isim-obfuscation temiz harflerden de uretebiliyor (FwBuGMUEyCuTDsoWOn),
+        // regex yeterli degil. Kural: .cctor govdesindeki call/callvirt/newobj
+        // operand'i BASKA bir tipe aitse (declaring != cctor'in tipi ve corlib
+        // degilse) at — NecroBit init zaten runtime'ta, kullanici cctor'unda
+        // kalan dis-tip cagrilari check'tir. Govde bosaldiysa ret.
+        int obfCallCut = 0;
+        foreach (var t in mod.GetTypes()) {
+            foreach (var m in t.Methods) {
+                if (m.Name != ".cctor" || !m.HasBody) continue;
+                var drop2 = new System.Collections.Generic.List<Instruction>();
+                foreach (var i in m.Body.Instructions) {
+                    if (i.OpCode != OpCodes.Call && i.OpCode != OpCodes.Callvirt &&
+                        i.OpCode != OpCodes.Newobj) continue;
+                    if (!(i.Operand is IMethod im2)) continue;
+                    var dt2 = im2.DeclaringType;
+                    if (dt2 == null) continue;
+                    // ayni tip icerisinde cagri (normal init) — dokunma:
+                    if (dt2 == t) continue;
+                    // corlib / bilinen BCL tipleri — dokunma:
+                    var asmRef = dt2.DefinitionAssembly;
+                    if (asmRef != null && (asmRef.Name == "mscorlib" || asmRef.Name == "System" ||
+                        asmRef.Name.StartsWith("System.") || asmRef.Name == "netstandard" ||
+                        asmRef.Name == "Microsoft.VisualBasic")) continue;
+                    drop2.Add(i);
+                }
+                foreach (var i in drop2) { i.OpCode = OpCodes.Nop; i.Operand = null; }
+                if (drop2.Count > 0) obfCallCut += drop2.Count;
+            }
+        }
+        Console.WriteLine("v43: dis-tip check cagrisi koparilan: " + obfCallCut);
         // v41: Main cflow sonsuz dongu — temiz WinForms govdesi yaz.
         // final17 kaniti: %100 CPU, pencere yok, V_6=17 switch IL_02ad loop.
         {
@@ -252,6 +287,7 @@ class NbFixCtor2 {
             var ctor = sform.Methods.FirstOrDefault(m => m.Name == ".ctor");
             if (ctor == null) { Console.WriteLine("v41: ctor yok"); }
             else {
+            main.Body.ExceptionHandlers.Clear();
             main.Body.Instructions.Clear();
             main.Body.Variables.Clear();
             main.Body.MaxStack = 8;
@@ -283,6 +319,7 @@ class NbFixCtor2 {
                         MethodSig.CreateInstance(mod.CorLibTypes.Void, mod.CorLibTypes.String), formRef);
                     var setVisible = new MemberRefUser(mod, "set_Visible",
                         MethodSig.CreateInstance(mod.CorLibTypes.Void, mod.CorLibTypes.Boolean), formRef);
+                    sctor.Body.ExceptionHandlers.Clear();
                     sctor.Body.Instructions.Clear();
                     sctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
                     sctor.Body.Instructions.Add(OpCodes.Call.ToInstruction(
@@ -309,6 +346,7 @@ class NbFixCtor2 {
                     if (i.Operand is string str && str.Contains("Eziriz")) { isNag = true; break; }
                 }
                 if (!isNag) continue;
+                m.Body.ExceptionHandlers.Clear();
                 m.Body.Instructions.Clear();
                 m.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
                 m.Body.KeepOldMaxStack = true;
@@ -342,6 +380,7 @@ class NbFixCtor2 {
             foreach (var m in t.Methods) {
                 if (!m.HasBody) continue;
                 if (!forceKill.Contains(m.Name.String)) continue;
+                m.Body.ExceptionHandlers.Clear();
                 m.Body.Instructions.Clear();
                 var retType = m.MethodSig.RetType;
                 if (retType != null && retType.ElementType != ElementType.Void) {
@@ -384,6 +423,21 @@ class NbFixCtor2 {
                     }
                 }
                 var toRemove = new System.Collections.Generic.List<Instruction>();
+                // v42: branch/exception-handler hedefi olup olmadigini once hesapla —
+                // hedef instruction SILINEMEZ (ModuleWriterException), NOP'lanir.
+                var branchTargets = new System.Collections.Generic.HashSet<dnlib.DotNet.Emit.Instruction>();
+                foreach (var i in m.Body.Instructions) {
+                    if (i.Operand is dnlib.DotNet.Emit.Instruction t1) branchTargets.Add(t1);
+                    if (i.Operand is dnlib.DotNet.Emit.Instruction[] tarr)
+                        foreach (var tt in tarr) branchTargets.Add(tt);
+                }
+                foreach (var eh in m.Body.ExceptionHandlers) {
+                    if (eh.TryStart != null) branchTargets.Add(eh.TryStart);
+                    if (eh.TryEnd != null) branchTargets.Add(eh.TryEnd);
+                    if (eh.HandlerStart != null) branchTargets.Add(eh.HandlerStart);
+                    if (eh.HandlerEnd != null) branchTargets.Add(eh.HandlerEnd);
+                    if (eh.FilterStart != null) branchTargets.Add(eh.FilterStart);
+                }
                 foreach (var i in m.Body.Instructions) {
                     // dnlib null operand'i bos MemberRef ile dolduruyor:
                     // gecersiz operand tespiti — isimsiz/null-isim.
@@ -396,7 +450,12 @@ class NbFixCtor2 {
                     if (ot == OperandType.InlineMethod || ot == OperandType.InlineField ||
                         ot == OperandType.InlineType || ot == OperandType.InlineTok ||
                         ot == OperandType.InlineString || ot == OperandType.InlineSig) {
-                        toRemove.Add(i);
+                        if (branchTargets.Contains(i)) {
+                            // hedef instruction — silme, nop'la (v42 safe)
+                            i.OpCode = OpCodes.Nop; i.Operand = null;
+                        } else {
+                            toRemove.Add(i);
+                        }
                     }
                 }
                 foreach (var i in toRemove) {
