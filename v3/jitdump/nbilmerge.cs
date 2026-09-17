@@ -102,18 +102,53 @@ class NBIlMerge {
             foreach (var pair in smEnv.Split(';')) {
                 var kv = pair.Split('=');
                 if (kv.Length == 2) stubMap[kv[0].Trim()] = kv[1].Trim();
-            }
-int seqIdx = 0;
-        int stubHit = 0;
-        for (int i = 0; i < toks.Count; i++) {
-            // NB_STUBMAP: file adi (m_XXXX.bin) manually eslenmisse o
-            // dump govdini adindan bulunan metoda yaz — proofli
-            // manually rota, sentetik/eslesmeyen tokenleri asmak icin.
-            string baseName = System.IO.Path.GetFileName(
-                Directory.GetFiles(a[1], "m_*.bin")[i]);
-            MethodDef stubTarget = null;
-            string dumpName = null;
-            if (stubMap.Count > 0 && stubMap.TryGetValue(baseName, out dumpName)) {
+                            }
+                        // NB_STUBMAPTOK: token-precise stub mapping (universal route):
+                        // format "m_0628001A.bin=06000006;m_06280015.bin=0600002B"
+                        // binds a dump file to the module method with that MethodDef
+                        // token. Token binding is unambiguous (unlike name binding).
+                        var stubTokMap = new System.Collections.Generic.Dictionary<string,string>();
+                        string stmEnv = Environment.GetEnvironmentVariable("NB_STUBMAPTOK");
+                        if (!string.IsNullOrEmpty(stmEnv))
+                            foreach (var pair in stmEnv.Split(';')) {
+                                var kv = pair.Split('=');
+                                if (kv.Length == 2) stubTokMap[kv[0].Trim()] = kv[1].Trim();
+                            }
+                        // NB_LDSTRMAP: rebind ldstr runtime tokens to literal strings
+                        // (NecroBit string-enc removes literals from the US heap; the
+                        // dumped IL keeps runtime-only tokens). Format:
+                        //   NB_LDSTRMAP="70000352=sample5;7000039E=register"
+                        // The literal is written into the OUT module's US heap by dnlib
+                        // with a fresh token — content-true rebinding.
+                        var ldstrMap = new System.Collections.Generic.Dictionary<uint,string>();
+                        string lsEnv = Environment.GetEnvironmentVariable("NB_LDSTRMAP");
+                        if (!string.IsNullOrEmpty(lsEnv))
+                            foreach (var pair in lsEnv.Split(';')) {
+                                var kv = pair.Split('=');
+                                if (kv.Length == 2) {
+                                    uint tk; if (!uint.TryParse(kv[0].Trim(), System.Globalization.NumberStyles.HexNumber, null, out tk)) continue;
+                                    ldstrMap[tk] = kv[1];
+                                }
+                            }
+                int seqIdx = 0;
+                        int stubHit = 0;
+                        int stubTokHit = 0, ldstrRebound = 0;
+                        for (int i = 0; i < toks.Count; i++) {
+                            // NB_STUBMAPTOK first (token-precise), then NB_STUBMAP (name).
+                            string baseName = System.IO.Path.GetFileName(
+                                Directory.GetFiles(a[1], "m_*.bin")[i]);
+                            MethodDef stubTarget = null;
+                            string dumpName = null;
+                            string tokName = null;
+                            if (stubTokMap.Count > 0 && stubTokMap.TryGetValue(baseName, out tokName)) {
+                                uint mt; if (uint.TryParse(tokName, System.Globalization.NumberStyles.HexNumber, null, out mt)) {
+                                    foreach (var t in mod.GetTypes())
+                                        foreach (var mstub in t.Methods)
+                                            if (mstub.MDToken.Raw == mt) { stubTarget = mstub; break; }
+                                }
+                                if (stubTarget != null) { stubTokHit++; }
+                            }
+                            if (stubTarget == null && stubMap.Count > 0 && stubMap.TryGetValue(baseName, out dumpName)) {
                 foreach (var t in mod.GetTypes())
                     foreach (var mstub in t.Methods)
                         if (mstub.Name.String == dumpName) { stubTarget = mstub; break; }
@@ -185,6 +220,20 @@ int seqIdx = 0;
                     (dnlib.DotNet.Emit.IInstructionOperandResolver)mod,
                     dr, m.Parameters);
                 if (newBody != null && newBody.Instructions.Count > 0) {
+                    // v49 LDSTR REBIND: NecroBit string-enc leaves runtime-only
+                    // ldstr tokens in the dumped IL. If NB_LDSTRMAP carries the
+                    // literal, replace the operand with the real string — dnlib
+                    // writes it into the OUT module's US heap content-true.
+                    foreach (var ins in newBody.Instructions) {
+                        if (ins.OpCode == OpCodes.Ldstr && ldstrMap.Count > 0) {
+                            uint ltok = ins.Operand is uint ? (uint)ins.Operand : 0;
+                            string lit;
+                            if (ltok != 0 && ldstrMap.TryGetValue(ltok, out lit)) {
+                                ins.Operand = lit;
+                                ldstrRebound++;
+                            }
+                        }
+                    }
                     // LOCALS: dump'ta localVarSig yok — ldloc/stloc
                     // operandlari null kaldi (writer "Operand is not
                     // a local/arg" hatasi). Govdeden TERS sdeadtion:
@@ -261,6 +310,7 @@ int seqIdx = 0;
         Console.WriteLine("stub-map hits: " + stubHit);
         Console.WriteLine("GERCEK YAZILAN method: " + restored + " | atlanan: " + skipped);
         Console.WriteLine("ILMATCH (sezgisel, KANITSIZ esleme): " + ilMatchUsed);
+        Console.WriteLine("stubTok hits: " + stubTokHit + " | ldstr rebound: " + ldstrRebound);
         string mw = Environment.GetEnvironmentVariable("NB_MAXWRITE");
         if (mw != null) Console.WriteLine("NB_MAXWRITE=" + mw + " (limit modu)");
 

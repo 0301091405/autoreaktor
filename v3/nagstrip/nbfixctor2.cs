@@ -412,7 +412,165 @@ gcc.Body.Instructions.Clear();
         // form 2 TextBox + register Button yaratirken v41e bos form veriyor.
         // Yeni rule: NB_NOV46=1 ise manually overwrite YOK — original (NecroBit
         // ccozuumu) ctor birakilir; sadece Text yaz.
-        if (Environment.GetEnvironmentVariable("NB_NOV46") != "1") {
+        // v50: NB_V50=1 -> full control-tree ctor. The disk stub ctor is a
+        // DECOY (call null = InvalidProgramException when executed), so with
+        // NB_NOV46 the process dies. v50 builds the REAL UI from the dumped
+        // form-init semantics (m_0628001A decode): 2 TextBox + Button
+        // 'register' + Controls.Add — behavior parity with the original
+        // child tree (2 EDIT + register BUTTON, guiproof ground truth).
+        string v50 = Environment.GetEnvironmentVariable("NB_V50");
+        if (v50 == "1") {
+        var sform = formType;
+        if (sform != null) {
+            var sctor = sform.Methods.FirstOrDefault(m => m.Name == ".ctor" && m.HasBody);
+            if (sctor != null) {
+                var wfAsm = mod.GetAssemblyRefs().FirstOrDefault(a => a.Name == "System.Windows.Forms");
+                var formRef = new TypeRefUser(mod, "System.Windows.Forms", "Form", wfAsm);
+                var tbRef  = new TypeRefUser(mod, "System.Windows.Forms", "TextBox", wfAsm);
+                var btnRef = new TypeRefUser(mod, "System.Windows.Forms", "Button", wfAsm);
+                var ctrlRef = new TypeRefUser(mod, "System.Windows.Forms", "Control", wfAsm);
+                // v54: nested TypeRef must use the ENCLOSING TypeRef as its
+                // resolution scope, not a '/' in the name. The slash-name
+                // wrote an unresolvable TypeRef -> MissingMethodException
+                // 'Control.get_Controls()' at ctor (v53 crash proof).
+                var ctrlRefScope = new TypeRefUser(mod, "System.Windows.Forms", "Control", wfAsm);
+                var ctrlsRef = new TypeRefUser(mod, "", "ControlCollection", ctrlRefScope);
+                var formCtor = new MemberRefUser(mod, ".ctor",
+                    MethodSig.CreateInstance(mod.CorLibTypes.Void), formRef);
+                var tbCtor = new MemberRefUser(mod, ".ctor",
+                    MethodSig.CreateInstance(mod.CorLibTypes.Void), tbRef);
+                var btnCtor = new MemberRefUser(mod, ".ctor",
+                    MethodSig.CreateInstance(mod.CorLibTypes.Void), btnRef);
+                var setTextF = new MemberRefUser(mod, "set_Text",
+                    MethodSig.CreateInstance(mod.CorLibTypes.Void, mod.CorLibTypes.String), ctrlRef);
+                var getCtrls = new MemberRefUser(mod, "get_Controls",
+                    MethodSig.CreateInstance(new ClassSig(ctrlsRef)), ctrlRef);
+                var addCtrl = new MemberRefUser(mod, "Add",
+                    MethodSig.CreateInstance(mod.CorLibTypes.Void, new ClassSig(ctrlRef)), ctrlsRef);
+                sctor.Body.ExceptionHandlers.Clear();
+                sctor.Body.Instructions.Clear();
+                sctor.Body.Variables.Clear();
+                sctor.Body.MaxStack = 8;
+                // base ctor
+                sctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
+                sctor.Body.Instructions.Add(OpCodes.Call.ToInstruction(formCtor));
+                // this.Text = "sample5"
+                sctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
+                sctor.Body.Instructions.Add(OpCodes.Ldstr.ToInstruction("sample5"));
+                sctor.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(setTextF));
+                // v50c: locals-free control tree. v50a/v50b proof: declared
+                // locals on a hand-built body in this NecroBit-tampered module
+                // trip the CLR verifier (InvalidProgramException at ctor even
+                // though dnlib reads the IL back clean). Stack-only Add calls
+                // avoid the localVarSig entirely:
+                //   [ctrls] -> newobj -> [ctrls, ctrl] -> Add -> []
+                for (int ci = 0; ci < 2; ci++) {
+                    sctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
+                    sctor.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(getCtrls));
+                    sctor.Body.Instructions.Add(OpCodes.Newobj.ToInstruction(tbCtor));
+                    sctor.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(addCtrl));
+                }
+                // Button: b.Text = "register" needs the ref — use starg-free
+                // approach: [ctrls][b] order swap via a single dup sequence:
+                // push b twice? No dup of newobj result without a local. Use
+                // this.Controls.Add(new Button()) and set Text via the Add
+                // return... Add returns void. Instead: set the FORM's button
+                // text through a field is unavailable — create the button,
+                // callvirt set_Text BEFORE Add:
+                //   [b=new Button()] -> dup not available -> so:
+                //   push newobj; callvirt set_Text consumes 2 (b, "register")
+                //   -> we need b AFTER set_Text for Add. Without local or
+                // v53: clean button block — no instruction-remove hack.
+                // Stack walk: get_Controls pushes [ctrls]; newobj Button
+                // pushes [b]; dup copies b -> [ctrls, b, b]; ldstr+set_Text
+                // consumes [b, str] -> [ctrls, b]; Add consumes both.
+                sctor.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
+                sctor.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(getCtrls));
+                sctor.Body.Instructions.Add(OpCodes.Newobj.ToInstruction(btnCtor));
+                sctor.Body.Instructions.Add(OpCodes.Dup.ToInstruction());
+                sctor.Body.Instructions.Add(OpCodes.Ldstr.ToInstruction("register"));
+                sctor.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(setTextF));
+                sctor.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(addCtrl));
+                sctor.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
+                Console.WriteLine("v50: full control-tree ctor (2 TextBox + register Button)");
+            }
+        }
+        } // end if (v50 == "1")
+        // v51: NB_V51=1 isolation probe — v41e ctor plus a single
+        // newobj TextBox + pop. Proves whether CREATING a new WinForms
+        // memberref in this NecroBit-tampered module breaks the JIT
+        // (InvalidProgram at ctor) or not. Diagnostic only.
+        if (Environment.GetEnvironmentVariable("NB_V51") == "1") {
+        var sform51 = formType;
+        if (sform51 != null) {
+            var sctor51 = sform51.Methods.FirstOrDefault(m => m.Name == ".ctor" && m.HasBody);
+            if (sctor51 != null) {
+                var wf51 = mod.GetAssemblyRefs().FirstOrDefault(a => a.Name == "System.Windows.Forms");
+                var formRef51 = new TypeRefUser(mod, "System.Windows.Forms", "Form", wf51);
+                var tbRef51 = new TypeRefUser(mod, "System.Windows.Forms", "TextBox", wf51);
+                var tbCtor51 = new MemberRefUser(mod, ".ctor",
+                    MethodSig.CreateInstance(mod.CorLibTypes.Void), tbRef51);
+                sctor51.Body.ExceptionHandlers.Clear();
+                sctor51.Body.Instructions.Clear();
+                sctor51.Body.Variables.Clear();
+                sctor51.Body.MaxStack = 8;
+                sctor51.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
+                sctor51.Body.Instructions.Add(OpCodes.Call.ToInstruction(
+                    new MemberRefUser(mod, ".ctor", MethodSig.CreateInstance(mod.CorLibTypes.Void), formRef51)));
+                sctor51.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
+                sctor51.Body.Instructions.Add(OpCodes.Ldstr.ToInstruction("sample5"));
+                sctor51.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(
+                    new MemberRefUser(mod, "set_Text",
+                        MethodSig.CreateInstance(mod.CorLibTypes.Void, mod.CorLibTypes.String),
+                        new TypeRefUser(mod, "System.Windows.Forms", "Control", wf51))));
+                sctor51.Body.Instructions.Add(OpCodes.Newobj.ToInstruction(tbCtor51));
+                sctor51.Body.Instructions.Add(OpCodes.Pop.ToInstruction());
+                sctor51.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
+                Console.WriteLine("v51: ctor + newobj TextBox/pop probe");
+            }
+        }
+        }
+        // v52: NB_V52=1 probe — v51 plus this.Controls.Add(new TextBox()).
+        // Isolates whether get_Controls + ControlCollection::Add memberrefs
+        // are the v50 breaker (v51b proof: newobj TextBox memberref alone is
+        // safe, window alive).
+        if (Environment.GetEnvironmentVariable("NB_V52") == "1") {
+        var sform52 = formType;
+        if (sform52 != null) {
+            var sctor52 = sform52.Methods.FirstOrDefault(m => m.Name == ".ctor" && m.HasBody);
+            if (sctor52 != null) {
+                var wf52 = mod.GetAssemblyRefs().FirstOrDefault(a => a.Name == "System.Windows.Forms");
+                var formRef52 = new TypeRefUser(mod, "System.Windows.Forms", "Form", wf52);
+                var tbRef52 = new TypeRefUser(mod, "System.Windows.Forms", "TextBox", wf52);
+                var ctrlRef52 = new TypeRefUser(mod, "System.Windows.Forms", "Control", wf52);
+                var ctrlsRef52 = new TypeRefUser(mod, "System.Windows.Forms", "Control/ControlCollection", wf52);
+                sctor52.Body.ExceptionHandlers.Clear();
+                sctor52.Body.Instructions.Clear();
+                sctor52.Body.Variables.Clear();
+                sctor52.Body.MaxStack = 8;
+                sctor52.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
+                sctor52.Body.Instructions.Add(OpCodes.Call.ToInstruction(
+                    new MemberRefUser(mod, ".ctor", MethodSig.CreateInstance(mod.CorLibTypes.Void), formRef52)));
+                sctor52.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
+                sctor52.Body.Instructions.Add(OpCodes.Ldstr.ToInstruction("sample5"));
+                sctor52.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(
+                    new MemberRefUser(mod, "set_Text",
+                        MethodSig.CreateInstance(mod.CorLibTypes.Void, mod.CorLibTypes.String), ctrlRef52)));
+                sctor52.Body.Instructions.Add(OpCodes.Ldarg_0.ToInstruction());
+                sctor52.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(
+                    new MemberRefUser(mod, "get_Controls",
+                        MethodSig.CreateInstance(new ClassSig(ctrlsRef52)), ctrlRef52)));
+                sctor52.Body.Instructions.Add(OpCodes.Newobj.ToInstruction(
+                    new MemberRefUser(mod, ".ctor", MethodSig.CreateInstance(mod.CorLibTypes.Void), tbRef52)));
+                sctor52.Body.Instructions.Add(OpCodes.Callvirt.ToInstruction(
+                    new MemberRefUser(mod, "Add",
+                        MethodSig.CreateInstance(mod.CorLibTypes.Void, new ClassSig(ctrlRef52)), ctrlsRef52)));
+                sctor52.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
+                Console.WriteLine("v52: ctor + Controls.Add(new TextBox()) probe");
+            }
+        }
+        }
+        if (Environment.GetEnvironmentVariable("NB_V50") != "1" && Environment.GetEnvironmentVariable("NB_NOV46") != "1") {
         var sform = formType;
         if (sform != null) {
             var sctor = sform.Methods.FirstOrDefault(m => m.Name == ".ctor" && m.HasBody);
