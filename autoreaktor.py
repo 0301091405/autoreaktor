@@ -1,29 +1,28 @@
 #!/usr/bin/env python3
-"""autoreaktor.py v2.1 — the Reactor pipeline.
+"""autoreaktor.py v3.0 — the Reactor pipeline.
 
 Stage 0  hunt       — classify .NET assemblies (clean/carrier/runtime/protected)
-Stage 1  de4dot     — partial cleanup (relative-path invocation)
+Stage 1  de4dot     — partial cleanup (kept as fallback candidate)
 Stage 2  Slayer     — antitamper/cflow/proxy/inline on the ORIGINAL file
-Stage 3  Krypton    — VM devirtualization ON THE SLAYED OUTPUT (the verified
-                      chain order; KRYPTON_FORCE_VM_MAP="0x75=Call" is applied
-                      automatically for virtualized targets)
+Stage 2b probe      — Slayer output is RUNNABLE-PROBED; if it crashes
+                      (interceptor/cctor breakage class), the de4dot-cleaned
+                      output is promoted as the runnable candidate (fallback)
+Stage 3  Krypton    — VM devirtualization ON THE SLAYED OUTPUT
 
 Usage:
   python autoreaktor.py <dir|file> [--dry-run] [--deep] [--keep-work]
 
-v2.1 changes:
-- CHAIN ORDER FIX (the big one): Krypton now runs on the Slayer output, not the
-  original. Verified on the Tuts4You Reactor 7.3 challenge: original→Krypton
-  stalls with unknown VM opcode 0x75 and dies with a NullReferenceException in
-  its own logger; Slayer→Krypton recovers 3/3 virtualized methods (47 + 2,852
-  + 872 instructions) and replaces the registration-check method body.
-- KRYPTON_FORCE_VM_MAP=0x75=Call is exported automatically for the Krypton
-  stage (upstream env override; the semantic validator prunes this mapping over
-  a 1-in-152 operand edge case).
-- de4dot stage stays first but its output is still treated as PARTIAL —
-  feeding de4dot output to Krypton breaks the resource parser (verified).
-- Exit classification: 'krypton-devirt' when Krypton recompiled ≥1 VM method,
-  'slayer-clean' when only Slayer ran, 'incomplete' otherwise.
+v3.0 changes:
+- KRYPTON_FORCE_VM_MAP default pin REMOVED. VM opcode bytes are randomized
+  per protected build; the old "0x75=Call" default was a pin specific to the
+  Tuts4You 7.3 challenge and silently broke devirtualization on every other
+  build. Mapping is resolved by Krypton's own discovery pass; per-target
+  overrides remain possible by exporting the env var manually.
+- de4dot is no longer an idle step: its cleaned output is the verified
+  fallback candidate (R5 class: Slayer breaks the CodeResolver cctor,
+  de4dot-cleaned output runs, GUI-proven).
+- Slayer output runnable-probe: report.json now records
+  slayer_output_runnable + fallback_output honestly per target.
 """
 import argparse
 import hashlib
@@ -134,8 +133,23 @@ def find_tool(name: str) -> str:
     return ""
 
 
-def run_stage(cmd, cwd, timeout=600, env=None):
+def run_stage(cmd, cwd, timeout=600, env=None, probe=False):
     t0 = time.time()
+    if probe:
+        # runnable-probe: launch, wait up to timeout, treat
+        # still-alive (None) as success (GUI apps block on purpose)
+        try:
+            p = subprocess.Popen(cmd, cwd=str(cwd), env=env,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                rc = p.wait(timeout=timeout)
+                out = (p.stdout.read() or b"") + (p.stderr.read() or b"")
+                return rc, out.decode("utf-8", "replace"), time.time() - t0
+            except subprocess.TimeoutExpired:
+                p.kill()
+                return None, "ALIVE", time.time() - t0
+        except Exception as e:
+            return 125, f"SPAWN-ERROR {e}", time.time() - t0
     try:
         r = subprocess.run(cmd, cwd=str(cwd), capture_output=True, timeout=timeout, env=env)
         out = (r.stdout or b"") + (r.stderr or b"")
@@ -210,6 +224,7 @@ def main():
                                     "partial_output": str(cleaned[0]) if cleaned else ""})
 
         # ---- stage 2: Slayer on the ORIGINAL (verified: de4dot output breaks decrypter init)
+        slayer_out = ""
         if args.deep and slayer:
             cmd = [slayer,
                    "--dec-methods", "True", "--dec-strings", "True", "--dec-rsrc", "True",
@@ -221,24 +236,51 @@ def main():
             entry["stages"].append({"stage": "NETReactorSlayer", "rc": rc, "secs": round(dur, 1),
                                     "log_tail": out[-800:]})
             if slayed:
-                entry["slayer_output"] = str(slayed[0])
+                slayer_out = str(slayed[0])
+                entry["slayer_output"] = slayer_out
                 entry["sha256_slayer_output"] = sha256(slayed[0])
+
+        # ---- stage 2b: SLAYER FALLBACK CHECK
+        # Slayer produced no output, or its output crashes on first run
+        # (R5/R4 class: interceptor/cctor breakage) => the de4dot
+        # partial-cleaned output is the runnable candidate. Honest
+        # fallback, verified on R5 where de4dot-cleaned GUI runs.
+        if slayer_out:
+            fr_rc, fr_out, _ = run_stage([str(work / Path(slayer_out).name)],
+                                          cwd=work, timeout=60, probe=True)
+            slayer_ok = fr_rc == 0 or fr_rc is None  # None = still alive = GUI blocking
+            entry["slayer_output_runnable"] = bool(slayer_ok)
+            if not slayer_ok:
+                cleaned = list(work.glob("*cleaned*"))
+                if cleaned:
+                    entry["fallback_output"] = str(cleaned[0])
+                    entry["sha256_fallback_output"] = sha256(cleaned[0])
+                    entry["stages"].append({"stage": "de4dot-fallback", "rc": 0,
+                                            "note": "slayer output not runnable; de4dot-cleaned promoted"})
+        else:
+            cleaned = list(work.glob("*cleaned*"))
+            if cleaned:
+                entry["fallback_output"] = str(cleaned[0])
+                entry["sha256_fallback_output"] = sha256(cleaned[0])
+                entry["stages"].append({"stage": "de4dot-fallback", "rc": 0,
+                                        "note": "slayer produced no output; de4dot-cleaned promoted"})
 
         # ---- stage 3: Krypton VM devirtualization on the SLAYED output
         # (verified chain order on the Reactor 7.3 challenge: original→Krypton
         # stalls on unknown opcode 0x75 + logger NRE; Slayer→Krypton recovers
         # 3/3 virtualized methods)
+        # NOTE: no KRYPTON_FORCE_VM_MAP pin anymore — VM opcode bytes are
+        # randomized per build; the old "0x75=Call" default was a target-
+        # specific pin (7.3 challenge) and breaks other builds. Mapping is
+        # resolved by Krypton's own discovery pass; if a tie stalls, the
+        # per-target pin can still be exported MANUALLY by the operator.
         if args.deep and krypton and entry.get("slayer_output"):
             kdir = work / "krypton"
             kdir.mkdir(exist_ok=True)
             slayed_name = Path(entry["slayer_output"]).name
             shutil.copy2(entry["slayer_output"], kdir / slayed_name)
-            # upstream env override: pin opcode 0x75=Call (the semantic
-            # validator prunes this mapping over a 1-in-152 operand edge case)
-            env = dict(os.environ)
-            env.setdefault("KRYPTON_FORCE_VM_MAP", "0x75=Call")
             rc, out, dur = run_stage([krypton, slayed_name, "--no-pause"],
-                                     cwd=kdir, timeout=1800, env=env)
+                                     cwd=kdir, timeout=1800)
             recompiled = out.count("Recompiled method body")
             kstage = {"stage": "Krypton", "rc": rc, "secs": round(dur, 1),
                       "vm_methods_recompiled": recompiled,

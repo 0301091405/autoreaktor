@@ -238,9 +238,11 @@ gcc.Body.Instructions.Clear();
         // operand'i BASKA bir tipe aitse (declaring != cctor'in tipi ve corlib
         // degilse) at — NecroBit init zaten runtime'ta, kullanici cctor'unda
         // kalan dis-tip cagrilari check'tir. Govde bosaldiysa ret.
+        bool noV43 = Environment.GetEnvironmentVariable("NB_NOV43") == "1";
         int obfCallCut = 0;
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
+                if (noV43) break;
                 if (m.Name != ".cctor" || !m.HasBody) continue;
                 var drop2 = new System.Collections.Generic.List<Instruction>();
                 foreach (var i in m.Body.Instructions) {
@@ -263,6 +265,58 @@ gcc.Body.Instructions.Clear();
             }
         }
         Console.WriteLine("v43: dis-tip check cagrisi koparilan: " + obfCallCut);
+        // v44: "tampered"/integrity-check stringi iceren METOTLARI force-ret
+        // yap (tipi degil — check ve init ayni tipte olabilir, 7.5.9.1'de
+        // 206-metotlu tipin tamamini oldurmek init'i de olduruyor ve NRE
+        // uretiyordu). Sadece stringi TASIYAN metot + o metodu dogrudan
+        // cagiran satirlar hedef alinir.
+        int tamperKill = 0, tamperCallCut = 0;
+        var tamperMethods = new System.Collections.Generic.List<MethodDef>();
+        foreach (var t in mod.GetTypes()) {
+            foreach (var m in t.Methods) {
+                if (!m.HasBody) continue;
+                bool isCheck = false;
+                foreach (var i in m.Body.Instructions) {
+                    if (i.OpCode.Name != "ldstr") continue;
+                    string s2 = i.Operand as string;
+                    if (s2 != null && (s2.ToLower().Contains("tampered") ||
+                        s2.ToLower().Contains("integrity") || s2.ToLower().Contains("modified"))) {
+                        isCheck = true;
+                    }
+                }
+                if (isCheck) tamperMethods.Add(m);
+            }
+        }
+        foreach (var m in tamperMethods) {
+            m.Body.ExceptionHandlers.Clear();
+            m.Body.Instructions.Clear();
+            var rt = m.MethodSig.RetType;
+            if (rt != null && rt.ElementType != ElementType.Void) {
+                if (rt.IsValueType) m.Body.Instructions.Add(OpCodes.Ldc_I4_0.ToInstruction());
+                else m.Body.Instructions.Add(OpCodes.Ldnull.ToInstruction());
+            }
+            m.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
+            m.Body.KeepOldMaxStack = true;
+            tamperKill++;
+            // cagiran satirlari nop'la (check void donuslu olsa bile
+            // bazi cagrilar sonucu kullanir — nop stack dengesizligi
+            // vermez, deger stackte kalir)
+            foreach (var t in mod.GetTypes()) {
+                foreach (var m2 in t.Methods) {
+                    if (!m2.HasBody || m2 == m) continue;
+                    foreach (var i in m2.Body.Instructions) {
+                        if ((i.OpCode == OpCodes.Call || i.OpCode == OpCodes.Callvirt) &&
+                            i.Operand is IMethod im3 && im3.Name == m.Name &&
+                            im3.DeclaringType != null && im3.DeclaringType.Name == m.DeclaringType.Name) {
+                            i.OpCode = OpCodes.Nop; i.Operand = null;
+                            tamperCallCut++;
+                        }
+                    }
+                }
+            }
+        }
+        if (tamperKill > 0)
+            Console.WriteLine("v44: check metodu olduruldu: " + tamperKill + " | cagri nop: " + tamperCallCut);
         // v41: Main cflow sonsuz dongu — temiz WinForms govdesi yaz.
         // final17 kaniti: %100 CPU, pencere yok, V_6=17 switch IL_02ad loop.
         {
@@ -406,6 +460,38 @@ gcc.Body.Instructions.Clear();
         // ANLAMLI oluyor (KCFlcDdR6L: ldarg.0+ldfld+callvirt+ret).
         // Metot tamamen bosaliyorsa donus-tipine gore dummy+ret.
         int nullRemoved = 0, hollowFilled = 0;
+        // NB_NOSIL=1: null-operand silme atlanir (NecroBit runtime-restore
+        // sinifi hedeflerde — 7.5.9.1, dotqw — null-sil init cagri zincirini
+        // kiriyor; restore bekleyen govde bozuluyor). Sadece check-strip
+        // (v43/v44) uygulanir.
+        bool noSil = Environment.GetEnvironmentVariable("NB_NOSIL") == "1";
+        if (noSil) {
+            // v45: NB_NOSIL modunda null operandlar SİLİNMEZ ama dnlib yine de
+            // null operand yazamaz -> gecici dummy MemberRef/MemberRefUser bagla.
+            // Davranis: NecroBit runtime-restore cagriyi zaten ele gecirir;
+            // dummy token sadece yazimi saglar. v18'in genisletilmisi.
+            int dummyBound = 0;
+            var dummyMrr = new MemberRefUser(mod, "d",
+                MethodSig.CreateInstance(mod.CorLibTypes.Void), mod.CorLibTypes.Object.TypeDefOrRef);
+            foreach (var t in allTypes) {
+                foreach (var m in t.Methods) {
+                    if (!m.HasBody) continue;
+                    foreach (var i in m.Body.Instructions) {
+                        if (i.Operand != null) continue;
+                        var ot = i.OpCode.OperandType;
+                        if (ot == OperandType.InlineMethod || ot == OperandType.InlineField ||
+                            ot == OperandType.InlineType || ot == OperandType.InlineTok ||
+                            ot == OperandType.InlineString || ot == OperandType.InlineSig) {
+                            if (ot == OperandType.InlineString) i.Operand = "d";
+                            else i.Operand = dummyMrr;
+                            dummyBound++;
+                        }
+                    }
+                }
+            }
+            Console.WriteLine("v45: null-operand dummy-token baglandi: " + dummyBound);
+        }
+        if (!noSil) {
         foreach (var t in allTypes) {
             foreach (var m in t.Methods) {
                 if (!m.HasBody) continue;
@@ -482,6 +568,7 @@ gcc.Body.Instructions.Clear();
             }
         }
         Console.WriteLine($"null-sil: {nullRemoved}, bosalan-dummy: {hollowFilled}");
+        } // end NB_NOSIL guard
         // DEBUG: yazim-oncesi kalan supheli operand'lar:
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
