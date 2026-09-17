@@ -1,10 +1,10 @@
-# AutoReaktör
+# AutoReaktor
 
 Batch .NET Reactor unpacking pipeline: entropy hunter → de4dot → NETReactorSlayer → Krypton (VM devirtualization), with per-file SHA-256 provenance, deterministic reruns, and a functional proof harness.
 
 ## Why
 
-de4dot stops at "Unknown Obfuscator" on modern Reactor builds and its rc=0 does NOT mean unpacked. NETReactorSlayer (6.4, Dec 2022) fixes antitamper/cflow/proxies but cannot initialize its decrypter on 7.x and skips Code Virtualization entirely. Krypton devirtualizes the VM but its NecroBit runtime-dump needs a correctly-bitted runner. Nobody chains them, verifies the result, or reports honestly what each stage achieved. AutoReaktör is that chain.
+de4dot stops at "Unknown Obfuscator" on modern Reactor builds and its rc=0 does NOT mean unpacked. NETReactorSlayer (6.4, Dec 2022) fixes antitamper/cflow/proxies but cannot initialize its decrypter on 7.x and skips Code Virtualization entirely. Krypton devirtualizes the VM but its NecroBit runtime-dump needs a correctly-bitted runner. Nobody chains them, verifies the result, or reports honestly what each stage achieved. AutoReaktor is that chain.
 
 ## The discovery: feed Slayer's output to Krypton, not the original
 
@@ -107,7 +107,7 @@ KRYPTON_FORCE_VM_MAP="0x75=Call" tools/krypton/Krypton/bin/Release/net8.0/Krypto
 
 ## Upstream fixes contributed by this work
 
-The AutoReaktör lab runs Krypton hard enough to hit its own bugs; all three fixes are in `tools/krypton/` as patches and documented here for upstreaming:
+The AutoReaktor lab runs Krypton hard enough to hit its own bugs; all three fixes are in `tools/krypton/` as patches and documented here for upstreaming:
 
 1. `Krypton.Runner.csproj` - `<Prefer32Bit>true</Prefer32Bit>` so the net48 Runner can load 32-bit-required targets (was: BadImageFormatException, 12 silent stage errors).
 2. `MethodRecompiling.cs` - null-guard on `method.Parent?.FullName` in the recompile catch-block (was: the *logger* threw NullReferenceException while reporting a recompile failure, killing the whole pipeline).
@@ -128,4 +128,4 @@ The AutoReaktör lab runs Krypton hard enough to hit its own bugs; all three fix
 
 de4dot (0xd4d) · de4dot-cex (ViRb3) · NETReactorSlayer (SychicBoy) · Krypton (PeterG75 upstream, dawwinci continuation fork) · dnlib · AsmResolver. Each keeps its own license; binaries are never redistributed here.
 
-AutoReaktör: MIT.
+AutoReaktor: MIT.

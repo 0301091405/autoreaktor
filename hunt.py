@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AutoReaktör hunt — directory scanner for .NET Reactor-protected assemblies.
+"""AutoReaktor hunt — directory scanner for .NET Reactor-protected assemblies.
 
 Standalone scanner module (used by autoreaktor.py --hunt mode):
 - PE CLR-header detection for .NET assemblies

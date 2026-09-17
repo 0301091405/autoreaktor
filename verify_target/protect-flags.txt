@@ -1,4 +1,4 @@
-# verify_target — the reproducible test target for AutoReaktör
+# verify_target — the reproducible test target for AutoReaktor
 #
 # Build:   dotnet publish -c Release -o out
 # Protect (with .NET Reactor 7.5 demo console, from its install dir):

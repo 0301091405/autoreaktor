@@ -1,4 +1,4 @@
-// Test target for AutoReaktör verification: a plain .NET 8 console app
+// Test target for AutoReaktor verification: a plain .NET 8 console app
 // with string encryption-relevant content. Build: dotnet publish -c Release
 using System;
 
