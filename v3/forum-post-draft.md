@@ -15,7 +15,7 @@ things that did NOT work, for the record: PrepareMethod on everything (766 calls
 the rebuild part is where it got interesting. naive dnlib write produces a binary that launches the VM stub loader and dies inside it with the anti-tamper exception. three separate bugs, all found by running the thing rather than reading it:
 
 1. metadata token renumbering. the VM resource blob stores original tokens and resolves them at runtime through Module.ResolveMethod/ResolveField. dnlib renumbers rows on write by default, so every constant in the blob silently points somewhere else. PreserveAll on write, problem gone
-2. overload resdeadtion by arity. Array.SetValue(object, int) vs (object, int[]) - same param count. the rebuild picked the array one and crashed with ArgumentNullException at runtime. you need the full signature from the harvested fragment
+2. overload resolution by arity. Array.SetValue(object, int) vs (object, int[]) - same param count. the rebuild picked the array one and crashed with ArgumentNullException at runtime. you need the full signature from the harvested fragment
 3. even my own logging injector hit #1 - rebuild without PreserveAll and the anti-tamper fires again. diagnostic builds don't get an exemption from the VM's token discipline
 
 end state on this target: 1438 call sites substituted across 187 methods, 0 necrobit pairs left in the output, and the rebuilt binary opens the same GUI and behaves identically to the original (register button, empty-field error box, all of it). i verified by actually clicking the button on both.

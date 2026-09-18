@@ -1,4 +1,4 @@
-// qcheck.cs — tek methodun IL dump'u (packed vs rebuilt diff icin).
+// qcheck.cs — IL dump of a single method (for packed vs rebuilt diff).
 using System;
 using System.Linq;
 using dnlib.DotNet;

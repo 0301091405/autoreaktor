@@ -1,6 +1,6 @@
-// rcheck.cs — null-operand'li methodlarin RVA kontrdead.
+// rcheck.cs — RVA check of null-operand methods.
 // Hipotez: NecroBit 7.5 comp-mode bu methodlarin RVA'sini 0'lar,
-// dnlib fake body uretir, 'call' operand null kalir.
+// dnlib produces a fake body, the 'call' operand stays null.
 using System;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;

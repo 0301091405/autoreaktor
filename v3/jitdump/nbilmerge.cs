@@ -1,9 +1,9 @@
-// nbilmerge.cs v6 — token filtresi duzeltildi: buyuk rid'ler
+// nbilmerge.cs v6 — token filter fixed: large rids
 // (MethodDesc chunk artefaktlari) atlanir ama modul icindeki
-// tum tokenlar denenir; ASil sorun: byToken aramasi 108'in
+// all tokens are tried; real problem: the byToken lookup misses 108's
 // hepsinde miss — cunku dump token'lari & 0xFFFFFF ile modulun
-// rid'leri ust uste dusmuyor olabilir. once taman tarama:
-// her dump token'i icin modulde var mi YOKSA rid'siz yaz.
+// rids may not line up. full scan first:
+// for every dump token: exists in module, else write without rid.
 // AYRICA CreateCilBody callnda exception mesajlarini yaz.
 using System;
 using System.Collections.Generic;
@@ -13,16 +13,16 @@ using dnlib.DotNet.Emit;
 using dnlib.DotNet.Writer;
 
 class NBIlMerge {
-    // ham CIL'den local sayisini cikar: ldloc.0-3/stloc.0-3 kisa
+    // derive local count from raw CIL: ldloc.0-3/stloc.0-3 short
     // form indexleri + ldloc/ldloca/stloc/ldloc.s/... operand
-    // baytlari taranir. Yanlis sayi = writer hatasi; bu yuzden
-    // OVER-estimate guvenli degil — TAMPON: en buyuk gorulen
-    // index + 1, en az 1 local (null-baglama icin).
+    // bytes are scanned. Wrong count = writer error; therefore
+    // over-estimating is not safe — BUFFER: largest observed
+    // index + 1, at least 1 local (for null binding).
     static int CountLocalsFromCil(byte[] cil) {
         // ldloc.0-3 = 0x06-0x09, stloc.0-3 = 0x0A-0x0D,
-        // ldloc.s=0x0E, ldloca.s=0x0F, stloc.s=0x13 (1 bayt index),
-        // 0xFE 06/09/0D ldloc/ldloca/stloc (2 bayt u16 index).
-        // Onceki bug: kisa formlar kaydedilmeden geciliyordu.
+        // ldloc.s=0x0E, ldloca.s=0x0F, stloc.s=0x13 (1-byte index),
+        // 0xFE 06/09/0D ldloc/ldloca/stloc (2-byte u16 index).
+        // Previous bug: short forms were skipped without recording.
         int maxIdx = -1;
         int i = 0, n = cil.Length;
         while (i < n) {
@@ -76,14 +76,14 @@ class NBIlMerge {
 
         int restored = 0, skipped = 0;
         bool noBodyWrite = Environment.GetEnvironmentVariable("NB_NOBODY") == "1";
-        // SEQ-esleme (x64 targetler icin): sentetik tokenli dumplar
-        // (rid araligi disi) nb2'de bodyless methodlarla metadatada
-        // karsilasma sirasina gore baglanir. Kanit zayfi — sadece
+        // SEQ-matching (for x64 targets): dumps with synthetic tokens
+        // (out of rid range) in nb2 with the bodyless methods in metadata
+        // bind by encounter order. Weak proof — only
         // rapor modunda kullan (NB_SEQ=1).
         bool seqMode = Environment.GetEnvironmentVariable("NB_SEQ") == "1";
         // NB_ILMATCH=1: sentetik tokenli dumplari bodyless methodlarla
-        // IL-imza (ilSize + ilk bayt) benzerligiyle esle. ilSize
-        // benzersizse gecerli eslemedir; cakisma statusunda ilk
+        // match by IL signature (ilSize + first byte) similarity. ilSize
+        // if unique it is a valid match; on collision the first
         // aday alinir ve RAPORLANIR (proof zayfligi acik).
         bool ilMatch = Environment.GetEnvironmentVariable("NB_ILMATCH") == "1";
         int ilMatchUsed = 0;
@@ -153,8 +153,8 @@ class NBIlMerge {
                     foreach (var mstub in t.Methods)
                         if (mstub.Name.String == dumpName) { stubTarget = mstub; break; }
                 if (stubTarget != null) {
-                    // genel yazma akisi bu bodyyi halleder:
-                    // m=stubTarget set et, have=true.
+                    // the general write path handles this body:
+                    // set m=stubTarget, have=true.
                     stubHit++;
                 }
             }
@@ -168,11 +168,11 @@ class NBIlMerge {
                                     if (m == null) { skipped++; continue; }
                                     have = true;
                                 } else if (ilMatch && bodyless.Count > 0) {
-                                    // IL-imza: dump (ilSize, ilk bayt) — moduldeki
-                                    // bodyless methodlarin bilinen IL'i yok; ama bu
-                                    // esleme TERS yonde calisir: dump'in ilSize'i
-                                    // modul metadata'sindan TAHMIN edilemez. Bu yuzden
-                                    // ILMATCH yalniz ilSize + call-count sezgisel
+                                    // IL signature: dump (ilSize, first byte) — the module's
+                                    // bodyless methods have no known IL; but this
+                                    // matching runs in reverse: the dump's ilSize
+                                    // cannot be predicted from module metadata. Therefore
+                                    // ILMATCH is only an ilSize + call-count heuristic
                                     // eslemesi yapabilir ve SONUC RAPORLANIR:
                                     m = null; int bestScore = -1;
                                     // bodyless methodlarin param sayisi + statiklik
@@ -206,7 +206,7 @@ class NBIlMerge {
                     var ms = new MemoryStream();
                     // fat header: word0 = (3 dwords << 12) | flags.
                     // flags 0x13 = FatFormat(0x3) | InitLocals(0x10).
-                    // 0x3011 yanlis bit duzeni — 0x3013 dogrusu (q20 proofli).
+                    // 0x3011 is the wrong bit layout — 0x3013 is correct (q20 proof).
                     ushort flags = 0x3013;
                     ms.Write(BitConverter.GetBytes(flags), 0, 2);
                     ms.Write(BitConverter.GetBytes((ushort)8), 0, 2);
@@ -234,18 +234,18 @@ class NBIlMerge {
                             }
                         }
                     }
-                    // LOCALS: dump'ta localVarSig yok — ldloc/stloc
-                    // operandlari null kaldi (writer "Operand is not
-                    // a local/arg" hatasi). Govdeden TERS sdeadtion:
-                    // max local index + 1 kadar Variables doldur ve
+                    // LOCALS: no localVarSig in the dump — ldloc/stloc
+                    // operands stayed null (writer "Operand is not
+                    // a local/arg" error). Reverse derivation from the body:
+                    // fill Variables up to max local index + 1 and
                     // null operandli ldloc/stloc/ldloca'lari indexe
                     // bagla.
                     int maxLocal = -1;
                     var localOps = new List<dnlib.DotNet.Emit.Instruction>();
                     foreach (var ins in newBody.Instructions) {
                         var op = ins.OpCode.Code;
-                        // TUM local opkodlari — kisa formlar dahil
-                        // (q21: 272 null operandin sebebi kisa formarin
+                        // ALL local opcodes — short forms included
+                        // (q21: the cause of 272 null operands was short forms
                         // bu listede olmamasiydi):
                         bool isLocalOp = op == dnlib.DotNet.Emit.Code.Ldloc ||
                                          op == dnlib.DotNet.Emit.Code.Ldloca ||
@@ -261,11 +261,11 @@ class NBIlMerge {
                             if (idx > maxLocal) maxLocal = idx;
                         }
                     }
-                    // CreateCilBody variables listesi bos olabilir:
+                    // CreateCilBody's variables list may be empty:
                     // local kullanan bodyde ldloc instr operand null
-                    // degilse dnlib zaten cozmustur; null ise index
-                    // instr'in sirasindan cikarilamaz — guvenli yol:
-                    // method imzasindan + body buyuklugundan degil,
+                    // otherwise dnlib already resolved it; if null, the index
+                    // cannot be derived from instr order — safe path:
+                    // not from method signature + body size,
                     // ham IL'den mini tarama:
                     if (localOps.Count > 0) {
                         string mwv = Environment.GetEnvironmentVariable("NB_MAXWRITE");
@@ -287,14 +287,14 @@ class NBIlMerge {
                                 idx2 = (int)c - (int)dnlib.DotNet.Emit.Code.Stloc_0;
                             else if (c == dnlib.DotNet.Emit.Code.Ldloc_S || c == dnlib.DotNet.Emit.Code.Ldloca_S ||
                                      c == dnlib.DotNet.Emit.Code.Stloc_S) {
-                                // .S formu: operand dnlib'de ushort olarak cozulur;
+                                // .S form: operand resolved as ushort in dnlib;
                                 // null kaldiysa IL'den cikaramayiz — Variables son index:
                                 idx2 = newBody.Variables.Count - 1;
                             } else idx2 = newBody.Variables.Count - 1;
                             if (idx2 >= 0 && idx2 < newBody.Variables.Count)
                                 ins.Operand = newBody.Variables[idx2];
                         }
-                        // atama sonrasi kontrol (Write oncesi):
+                        // post-assignment check (before Write):
                         int stillNull = 0;
                         foreach (var ins in localOps) if (ins.Operand == null) stillNull++;
                         if (i < 3) Console.WriteLine("  [post] tok=0x" + toks[i].ToString("X8") + " halaNull=" + stillNull);
@@ -308,13 +308,13 @@ class NBIlMerge {
             }
         }
         Console.WriteLine("stub-map hits: " + stubHit);
-        Console.WriteLine("GERCEK YAZILAN method: " + restored + " | atlanan: " + skipped);
-        Console.WriteLine("ILMATCH (sezgisel, KANITSIZ esleme): " + ilMatchUsed);
+        Console.WriteLine("method actually written: " + restored + " | skipped: " + skipped);
+        Console.WriteLine("ILMATCH (heuristic, unproven matching): " + ilMatchUsed);
         Console.WriteLine("stubTok hits: " + stubTokHit + " | ldstr rebound: " + ldstrRebound);
         string mw = Environment.GetEnvironmentVariable("NB_MAXWRITE");
         if (mw != null) Console.WriteLine("NB_MAXWRITE=" + mw + " (limit modu)");
 
-        // null-operand yazim kurtarmasi (NB_NOSIL=1 ile atla)
+        // null-operand write rescue (skip with NB_NOSIL=1)
         bool noSil2 = Environment.GetEnvironmentVariable("NB_NOSIL") == "1";
         var toRemove = new List<Instruction>();
         int nullSil = 0;
@@ -351,8 +351,8 @@ class NBIlMerge {
         Console.WriteLine("null-wipe: " + nullSil);
 
         // AT-KILL disabled (NB_ATKILL=1 opt-in): PreserveTokens
-        // ile yazim nb2'nin CRC dengesini koruyorsa gerek yok;
-        // "tampered" tekrar cikarsa NB_ATKILL=1 ile v44 cerrahisi.
+        // write keeps nb2's CRC intact, no need;
+        // if "tampered" reappears, v44 surgery with NB_ATKILL=1.
         int tamperKilled = 0, tamperNop = 0;
         bool doAtKill = Environment.GetEnvironmentVariable("NB_ATKILL") == "1";
         if (!doAtKill) { tamperKilled = 0; goto SkipAtKill; }
@@ -369,15 +369,15 @@ class NBIlMerge {
                 }
             }
         foreach (var tm in tamperMethods) {
-            // SATIR-CERRAHISI (method-kill DEGIL): sadece "tampered"
-            // ldstr'den sonraki throw zincirini kes; metodun init
-            // kismini birak (v44 bulgusu: check/init ayni bodyde).
+            // LINE-SURGERY (not method-kill): only the "tampered"
+            // cut the throw chain after ldstr; the method's init
+            // part stays (v44 finding: check/init share one body).
             var instrs = tm.Body.Instructions;
             for (int ii = 0; ii < instrs.Count; ii++) {
                 if (instrs[ii].OpCode == OpCodes.Ldstr) {
                     var sv = instrs[ii].Operand as string;
                     if (sv == null || !sv.ToLower().Contains("tamper")) continue;
-                    // ldstr sonrasi throw zinciri: ldstr -> newobj -> throw
+                    // throw chain after ldstr: ldstr -> newobj -> throw
                     int cutEnd = Math.Min(ii + 4, instrs.Count);
                     for (int jj = ii; jj < cutEnd; jj++) {
                         if (instrs[jj].OpCode == OpCodes.Throw) {
@@ -408,7 +408,7 @@ class NBIlMerge {
         var wopts = new ModuleWriterOptions(mod);
         wopts.MetadataLogger = DummyLogger.NoThrowInstance;
         // PreserveAll: rid + heap offset hizalamasini korur — AT'nin
-        // CRC kapsam alani bozulmaz (q26 ile verifyndi, 32767).
+        // CRC coverage area stays intact (verified via q26, 32767).
         wopts.MetadataOptions.Flags |= dnlib.DotNet.Writer.MetadataFlags.PreserveAll;
         wopts.MetadataOptions.Flags |= dnlib.DotNet.Writer.MetadataFlags.KeepOldMaxStack;
         mod.Write(a[2], wopts);

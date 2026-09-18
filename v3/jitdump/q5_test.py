@@ -1,22 +1,23 @@
-# Tokenlar modulde VAR (rid 3 = ?.?::?, bodyless). Yani byToken
-# MISS DEGIL — bulmasi gerek! nbilmerge'de neden 108 hep skip?
-# Kod tekrar bak: TryGetValue(toks[i], out m) — toks[i] dump
-# filesinin ADINDAKI token degil ICINDEKI token! Dosya adi
-# m_06000003.bin ama ICINDEKI ilk 4 bayt token alani: ilk dump
-# turunda sentetik sayiydi, MethodDesc fix sonrasi 0x06000003.
-# Ama nbilmerge toks[i]'yi ICINDEKI alandan okuyor — dogru.
-# Bekle: rid 3 = HasBody=False. nbilmerge akisi:
-#   TryGetValue OK -> m bulundu -> CreateCilBody(...) ->
-#   newBody null VEYA Instructions.Count==0 -> skipped++ !
-# Yani miss degil, CreateCilBody BOS donuyor. Sebep: m.HasBody=
-# false iken m.Parameters OK ama resolver olarak 'mod' cast'i
-# calismiyor olabilir (ModuleDefMD IInstructionOperandResolver
-# implement eder mi?). Cast istisnasiz gecmis olmali yoksa exc
-# yazilirdi. newBody donusunde 0 instr — resolver calisti ama
-# IL sdeadtionlemesi bos kaldi? 57 baytlik body icin 0 instr
-# olmaz. MUHTEMEL: CreateCilBody byte[] overload'i code+eh
-// bekluyor; eh=null patlamadan bos donebilir.
-# TEST: kucuk bir ornek ile CreateCilBody'yi manuel dene:
+# Tokens DO exist in the module (rid 3 = ?.?::?, bodyless). So
+# byToken is not a MISS — it should find it! Why does nbilmerge
+# always skip 108? Re-read the code: TryGetValue(toks[i], out m) —
+# toks[i] is the token IN THE FILE BODY, not the one in the
+# filename! The file is named m_06000003.bin but its first 4 bytes
+# are the token field: in the first dump round this was a synthetic
+# counter, after the MethodDesc fix it is 0x06000003.
+# nbilmerge reads toks[i] from the BODY field — correct.
+# Wait: rid 3 = HasBody=False. nbilmerge flow:
+#   TryGetValue OK -> m found -> CreateCilBody(...) ->
+#   newBody null OR Instructions.Count==0 -> skipped++ !
+# So not a miss: CreateCilBody returns empty. Reason: with
+# m.HasBody=false, m.Parameters is OK but the resolver cast of 'mod'
+# may fail (does ModuleDefMD implement IInstructionOperandResolver?).
+# The cast must have passed or an exc line would print. The returned
+# newBody has 0 instr — resolver ran but the IL disassembly came out
+# empty? 0 instr for a 57-byte body is impossible. LIKELY: the
+# CreateCilBody byte[] overload expects code+eh; eh=null may return
+# empty without throwing.
+# TEST: try CreateCilBody manually on a small sample:
 code = r'''
 using System;
 using System.IO;

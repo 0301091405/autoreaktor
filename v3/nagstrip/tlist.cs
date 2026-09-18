@@ -11,7 +11,7 @@ class TList {
             foreach (var m in t.Methods)
                 Console.WriteLine($"  {m.Name} | {m.MethodSig?.RetType} | body={(m.HasBody ? m.Body.Instructions.Count : -1)}");
         }
-        // antidebug taramasi: tipik API adi/ipucu:
+        // antidebug scan: typical API names/hints:
         Console.WriteLine("--- antidebug/antiildasm tarama ---");
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {

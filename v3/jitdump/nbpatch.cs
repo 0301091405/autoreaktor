@@ -1,10 +1,10 @@
-// nbpatch.cs — HAM BYTE PATCH rota: dnlib Write AT'nin runtime
-// CRC'sini bozuyor (nb2-rt NRE proofi). Bu rota PE'ye hic
-// dokunmaz: MethodDef RVA'larina JIT-dump bodylerini direkt
-// bayt olarak yazar. Method body RVA dnlib'den cozulur, body
-// tiny/fat header + IL olarak fileya yazilir. CRC kapsam
-// degisikligi nb2'nin kendi degisikligiyle ayni mekanizma.
-// Kullanim: nbpatch.exe <in.exe> <dumpdir> <out.exe>
+// nbpatch.cs — raw byte patch route: dnlib Write breaks the AT's
+// runtime CRC (nb2-rt NRE proof). This route never touches the PE:
+// it writes the JIT-dump bodies directly as bytes into the MethodDef
+// RVAs. The method body RVA is resolved via dnlib, the body is
+// written to file as tiny/fat header + IL. The CRC coverage change
+// uses the same mechanism as nb2's own change.
+// Usage: nbpatch.exe <in.exe> <dumpdir> <out.exe>
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -29,19 +29,19 @@ class NbPatch {
             uint il = BitConverter.ToUInt32(d, 4);
             MethodDef m;
             if (!byToken.TryGetValue(tok, out m) || m == null) { skipped++; continue; }
-            if (!m.HasBody) { skipped++; continue; } // RVA zaten stub degil — NecroBit stub RVA'da da degisiklik yapar
+            if (!m.HasBody) { skipped++; continue; } // the RVA is not the stub anyway — NecroBit also changes stub RVAs
             var rva = (uint)m.RVA;
             if (rva == 0) { skipped++; continue; }
 
-            // file offsetine cevir: PE section'lardan
+            // convert to file offset: from PE sections
             long off = RvaToOffset(pe, rva);
             if (off < 0) { skipped++; continue; }
 
-            // eski body boyutunu coz (tiny/fat)
+            // decode old body size (tiny/fat)
             uint oldSize = OldBodySize(pe, off);
             if (oldSize == 0) { skipped++; continue; }
 
-            // yeni body: header + IL
+            // new body: header + IL
             byte[] body = new byte[il];
             Array.Copy(d, 20, body, 0, il);
             byte[] all;
@@ -58,7 +58,7 @@ class NbPatch {
                 ms.Write(BitConverter.GetBytes((uint)0), 0, 4);
                 ms.Write(body, 0, body.Length);
                 all = ms.ToArray();
-                if (all.Length % 4 != 0) { // fat body 4-byte hizali
+                if (all.Length % 4 != 0) { // fat body is 4-byte aligned
                     var pad = new byte[all.Length + (4 - all.Length % 4)];
                     Array.Copy(all, pad, all.Length);
                     all = pad;
@@ -66,15 +66,15 @@ class NbPatch {
             }
 
             if (all.Length > oldSize) {
-                // yeni body eski alandan buyuk — yazilamaz (diger
-                // metodun alanina tasmas). Skip + rapor.
+                // new body larger than old space — cannot write (would
+                // overflow into the next method's area). Skip + report.
                 skipped++;
-                Console.WriteLine("  [buyuk] 0x" + tok.ToString("X8") + " yeni=" + all.Length + " eski=" + oldSize);
+                Console.WriteLine("  [too-large] 0x" + tok.ToString("X8") + " new=" + all.Length + " old=" + oldSize);
                 continue;
             }
 
             Array.Copy(all, 0, pe, off, all.Length);
-            // kalan baytlari sifirla (eski body kalintisi zararsiz
+            // zero the remaining bytes (old body residue is harmless
             // ama temiz olsun):
             for (long z = off + all.Length; z < off + oldSize; z++) pe[z] = 0;
             patched++;

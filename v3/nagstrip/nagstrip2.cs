@@ -1,13 +1,13 @@
-// nagstrip2.cs — t1 runnable proofi v2.
+// nagstrip2.cs — t1 runnable proof v2.
 //
-// v1 bulgusu: sadece nag-throw'i ret'lemek yetmedi (0xC0000005).
+// v1 finding: just ret-ing the nag-throw was not enough (0xC0000005).
 // Kalan iki Reactor runtime call:
 //   AoIBWWlDJbaf7LijnA.oMu6jVbdhHEH79DDhU::qp1d5IbOJ()  (anti-tamper check)
-//   UWxvxUSU2ZrCqT9K8B.gttro5yuWySr2hbdEM::OHl6UVo6W() (de4dot'in zaten
+//   UWxvxUSU2ZrCqT9K8B.gttro5yuWySr2hbdEM::OHl6UVo6W() (which de4dot already
 //   ret'ledigi ama <Module> cctor'dan calllan init)
-// Strateji: her iki method callni (call opcode) tum body from kaldir
-// VE methodlarin kendi bodylerini ret yap. String'ler zaten de4dot'ta
-// decrypted (ldstr duz) — decryptora ihtiyac none bu targette.
+// strategy: remove both method calls (call opcode) from the whole body
+// AND ret the bodies of those methods. Strings are already resolved in de4dot
+// decrypted (plain ldstr) — no decryptor needed on this target.
 using System;
 using System.Collections.Generic;
 using dnlib.DotNet;
@@ -20,7 +20,7 @@ class NagStrip2 {
         var mod = ModuleDefMD.Load(args[0]);
 
         // 1) Reactor runtime methodlarini bul (bodysi olmayan 42 method icinden
-        //    calllanlar + nag'li olanlar) — isim imzasiyla:
+        //    the called ones + the nag ones) — by name signature:
         var runtimeMethods = new HashSet<IMethod>();
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
@@ -33,7 +33,7 @@ class NagStrip2 {
                     }
                 }
                 // qp1d5IbOJ: her tipin cctor'unda calllan — string decryptor init
-                // olabilir. ONCE kim olduguna bak: calllan methodlari topla
+                // could exist. FIRST see who they are: collect the called methods
                 if (m.Name.String.StartsWith("qp1d5IbOJ")) isRuntime = true;
                 if (m.Name.String.StartsWith("OHl6UVo6W")) isRuntime = true;
                 if (isRuntime) {
@@ -47,7 +47,7 @@ class NagStrip2 {
         }
         Console.WriteLine($"runtime method: {runtimeMethods.Count}");
 
-        // 2) Tum bodylerden bu methodlara giden CALL'lari kaldir
+        // 2) remove all CALLs to these methods from every body
         int removed = 0;
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
@@ -66,7 +66,7 @@ class NagStrip2 {
         }
         Console.WriteLine($"call kaldirildi: {removed}");
 
-        // 3) cctor'larda bransiz kalan call — hepsi zaten ret ile bitiyor
+        // 3) orphaned calls in cctors — all already end with ret
         mod.Write(args[1]);
         Console.WriteLine($"[ok] -> {args[1]}");
         return 0;

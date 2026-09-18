@@ -1,13 +1,13 @@
 // nagstrip4.cs — v4: branch targetlerini bozmayan nag-strip.
 //
-// Onceki iki denemenin ogrettigi:
-//   v2 (call'i listeden cikar): branch targeti kirilir
-//   v3 (call'i nop'la ama runtime method bodysini Clear() et): Clear()
+// What the previous two attempts taught us:
+//   v2 (remove the call from the list): breaks the branch target
+//   v3 (nop the call but Clear() the runtime method body): Clear()
 //       branch targetlerini kiriyor — cunku KALDIRILAN instruction'lar
-//       baska methodlarin branch targeti olarak recordli.
-// Dogru yontem: runtime method bodysindeki HER instruction'i NOP yap,
-// sonuncuyu ret yap (liste hep full — Instruction objeleri yerinde kalir,
-// branch targeti referanslari gecerli).
+//       recorded as branch targets of other methods.
+// correct approach: NOP EVERY instruction in the runtime method body,
+// ret the last one (the list stays full — Instruction objects stay in place,
+// branch target references stay valid).
 using System;
 using System.Collections.Generic;
 using dnlib.DotNet;
@@ -58,7 +58,7 @@ class NagStrip4 {
                 }
             }
         }
-        // obfuscate bodylerde max-stack yeniden hesabi patlar — koru
+        // re-computing max-stack breaks on obfuscated bodies — keep it
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
                 if (m.HasBody) m.Body.KeepOldMaxStack = true;

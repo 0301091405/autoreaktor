@@ -1,7 +1,7 @@
-// nagstrip3.cs — v3: branch targetli call'lari da temizle.
-// dnlib hatasi: kaldirilan call, bir branch'in targetiydi. Cozum: Instruction
+// nagstrip3.cs — v3: also clean the branch-targeted calls.
+// dnlib error: the removed call was a branch target. Solution: instead of removing the Instruction
 // listesini yeniden kur ama targetleri once sabitle — dnlib de branch'lari da
-// kaldirmak yerine call yerine `nop` yaz (stack etkisi 0, void call).
+// write `nop` in place of the call (stack effect 0, void call).
 using System;
 using System.Collections.Generic;
 using dnlib.DotNet;
@@ -36,7 +36,7 @@ class NagStrip3 {
         }
         Console.WriteLine($"runtime method: {runtimeMethods.Count}");
 
-        // nop'la (kaldirma yok — branch targetleri bozulmaz)
+        // nop it (no removal — branch targets stay intact)
         int nopped = 0;
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {

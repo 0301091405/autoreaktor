@@ -1,5 +1,5 @@
-// dcheck2.cs — AoIBWWl targetli calllari OZEL analiz et.
-// Soru: AoIBWWl tipi metadata'da VAR MI (dnlib TypeDef olarak okuyor mu),
+// dcheck2.cs — specifically analyze the calls targeting AoIBWWl.
+// Question: does the AoIBWWl type EXIST in metadata (does dnlib read it as a TypeDef),
 // yoksa MemberRef'in DeclaringType'i nereye scope ediliyor?
 using System;
 using System.Linq;
@@ -10,7 +10,7 @@ class DCheck2 {
     static void Main(string[] args) {
         var mod = ModuleDefMD.Load(args[0]);
 
-        // 1) modulde AoIBWWl adi gecen TypeDef var mi?
+        // 1) is there a TypeDef in the module whose name contains AoIBWWl?
         foreach (var t in mod.GetTypes()) {
             if (t.Name.String.Contains("AoIBWWl") || t.FullName.Contains("AoIBWWl"))
                 Console.WriteLine($"[typedef] {t.FullName} methods={t.Methods.Count}");

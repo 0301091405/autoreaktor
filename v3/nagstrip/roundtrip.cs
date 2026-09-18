@@ -1,5 +1,5 @@
-// roundtrip.cs — write-test: patch YOK, sadece Load + Write.
-// AV roundtrip'ten geliyorsa suc nagstrip'te not, dnlib yaziminda.
+// roundtrip.cs — write-test: NO patch, just Load + Write.
+// if the AV comes from the roundtrip, the fault is in nagstrip, not the dnlib write.
 using System;
 using dnlib.DotNet;
 

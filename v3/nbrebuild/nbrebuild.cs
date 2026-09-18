@@ -231,7 +231,7 @@ namespace NecrobitRebuild
             return x.FullName == y.FullName;
         }
 
-        // ---- fragment target resdeadtion --------------------------------
+        // ---- fragment target resolution --------------------------------
         // net48 console apps cannot Assembly.Load("System.Windows.Forms")
         // by simple name (fails with FileNotFoundException). Instead,
         // resolve BCL types through the TARGET's own AssemblyRefs and the

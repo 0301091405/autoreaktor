@@ -1,4 +1,4 @@
-// jittest.cs — qp1d5IbOJ'u tek basina JIT'le, hata detayini al.
+// jittest.cs — JIT qp1d5IbOJ alone, get the error detail.
 using System;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -38,7 +38,7 @@ class JitTest {
             }
             Console.WriteLine("turlar listelenemedi");
         } catch (Exception ex) {
-            Console.WriteLine("yukleme hatasi: " + ex.GetType().Name + ": " + ex.Message);
+            Console.WriteLine("load error: " + ex.GetType().Name + ": " + ex.Message);
             if (ex.InnerException != null)
                 Console.WriteLine("  ic: " + ex.InnerException.Message);
         }

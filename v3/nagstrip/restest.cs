@@ -8,6 +8,6 @@ class ResTest {
         try {
             var s = asm.GetManifestResourceStream("lIbmsk8bjV8OfC2Eei.hLMLXK0edH4c3LAnjX");
             Console.WriteLine("target res: " + (s == null ? "NULL" : s.Length + "B"));
-        } catch (Exception ex) { Console.WriteLine("hata: " + ex.Message); }
+        } catch (Exception ex) { Console.WriteLine("error: " + ex.Message); }
     }
 }

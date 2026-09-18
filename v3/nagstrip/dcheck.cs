@@ -1,4 +1,4 @@
-// dcheck.cs — AoIBWWl::* calllarinin dnlib gozumunu debug et.
+// dcheck.cs — debug dnlib's view of the AoIBWWl::* calls.
 using System;
 using System.Linq;
 using dnlib.DotNet;

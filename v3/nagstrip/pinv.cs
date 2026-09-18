@@ -25,7 +25,7 @@ class PInv {
                     Console.WriteLine($"{t.FullName}: {n}");
             }
         }
-        // Debugger ile ilgili her turlu string:
+        // every string related to the Debugger class:
         Console.WriteLine("--- debugger string tarama ---");
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {

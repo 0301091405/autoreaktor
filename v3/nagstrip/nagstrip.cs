@@ -1,9 +1,9 @@
-// nagstrip.cs — t1 proofi: NecroBit-only 7.5 targetten demo-nag'i cikar,
-// runnable rebuild uret. Borc: "nbrebuild runnable proofi" 7.5 layout'unda.
+// nagstrip.cs — t1 proof: remove the demo nag from the NecroBit-only 7.5 target,
+// produce a runnable rebuild. Owed: "nbrebuild runnable proof" in the 7.5 layout.
 //
 // Bulgu (olculmus): 7.5 demo NecroBit comp-mode bodyleri metadata'da
 // birakiyor (dnlib 179/179 goruyor, 0 stub) → rebuild = dnlib with
-// <Module>::m8DF1397502BE3EE (nag throw) bodysini ret with degistir.
+// replace <Module>::m8DF1397502BE3EE's (nag throw) body with ret.
 using System;
 using System.IO;
 using dnlib.DotNet;

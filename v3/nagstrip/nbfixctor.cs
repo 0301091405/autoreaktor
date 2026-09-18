@@ -1,13 +1,13 @@
-// nbfixctor.cs — NecroBit 7.5 sahte-ctor tamiri: base call enjekte et.
+// nbfixctor.cs — NecroBit 7.5 fake-ctor repair: inject the base call.
 //
-// Proof zinciri (t7):
+// Proof chain (t7):
 //   1. original sample.exe CALISIR (GUI acilir)
-//   2. dnlib roundtrip (hic patch none) -> NullReferenceException at
+//   2. dnlib roundtrip (no patching at all) -> NullReferenceException at
 //      Control.set_Text: ctor base Form::.ctor cagirmiyor
-//   3. metadata'da SampleForm::.ctor = nop nop nop ret (imkansiz derleyici
-//      ciktisi) -> NecroBit demo sahte body birakmis
-//   4. source kod: default ctor olmali (base callli)
-// TAMIR: sahte bodyli method .ctor ise: call base::.ctor + ret yaz.
+//   3. in metadata SampleForm::.ctor = nop nop nop ret (impossible for a compiler
+//      output) -> the NecroBit demo left a fake body
+//   4. source code: should be a default ctor (with the base call)
+// REPAIR: if the fake-body method is a .ctor: write call base::.ctor + ret.
 using System;
 using dnlib.DotNet;
 using dnlib.DotNet.Emit;
@@ -23,7 +23,7 @@ class NbFixCtor {
             foreach (var m in t.Methods) {
                 if (!m.HasBody) continue;
                 var ins = m.Body.Instructions;
-                // sahte body: <= 6 instr, hicbir call/newobj yok, hepsi nop/ret
+                // fake body: <= 6 instr, no call/newobj at all, all nop/ret
                 bool fake = ins.Count <= 6;
                 bool anyCall = false;
                 int nonNopRet = 0;
@@ -37,7 +37,7 @@ class NbFixCtor {
 
                 Console.WriteLine($"[cand] {t.FullName}::{m.Name} ins={ins.Count} ctor={m.IsConstructor} static={m.IsStatic}");
                 if (m.IsConstructor && !m.IsStatic) {
-                    // base::.ctor call enjekte et
+                    // inject the base::.ctor call
                     var baseType = t.BaseType;
                     IMethod baseCtor = null;
                     if (baseType != null) {

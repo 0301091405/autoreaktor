@@ -12,7 +12,7 @@ class ResTest2 {
                 object v = f.GetValue(null);
                 Console.WriteLine("liEFV4Ewy = " + (v == null ? "NULL" : v.ToString()));
             } catch (Exception ex) {
-                Console.WriteLine("alan hatasi: " + ex.GetType().Name + ": " + ex.Message);
+                Console.WriteLine("field error: " + ex.GetType().Name + ": " + ex.Message);
                 if (ex.InnerException != null) Console.WriteLine("  ic: " + ex.InnerException.Message);
             }
             return;

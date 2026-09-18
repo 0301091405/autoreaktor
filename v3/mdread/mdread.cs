@@ -18,7 +18,7 @@ class MDRead {
             }
         }
         Console.WriteLine($"types={mod.Types.Count} methods withBody={withBody} noBody={noBody}");
-        // NecroBit stub tespiti: bodysi sadece ldsfld + callvirt/call Invoke?
+        // NecroBit stub detection: is the body just ldsfld + callvirt/call Invoke?
         int stubs = 0, real = 0;
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {

@@ -42,7 +42,7 @@ class NBWalk {
 
         W("[PREPARED] " + prepared);
 
-        // 3) TUM statik alanlari tara — tip + deger tipi + boyut
+        // 3) scan ALL static fields — type + value type + size
         foreach (var t in SafeTypes(asm)) {
             if (t == null) continue;
             FieldInfo[] fs;
@@ -62,7 +62,7 @@ class NBWalk {
             }
         }
 
-        // 4) byte[] alanlarini ham filelara dok + policyCreatorDic icerigi
+        // 4) dump the byte[] fields to raw files + the policyCreatorDic contents
         foreach (var t in SafeTypes(asm)) {
             if (t == null) continue;
             FieldInfo[] fs;

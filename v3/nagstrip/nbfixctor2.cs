@@ -1,4 +1,4 @@
-// nbfixctor2.cs — v2: external base tipler for GAC'tan ctor import et.
+// nbfixctor2.cs — v2: import ctors for external base types from the GAC.
 // SampleForm : Form — BaseType TypeRef, ResolveTypeDef null. Cozum:
 // Assembly.Load(baseType.DefinitionAssembly) with gercek tip yukle.
 using System;
@@ -8,7 +8,7 @@ using dnlib.DotNet.Emit;
 using dnlib.DotNet.Writer;
 
 class nbfixctor2 {
-    // v45 yardimcisi: WinForms Form tipi imzasi — corlib'den degil
+    // v45 helper: WinForms Form type signature — not from corlib
     // System.Windows.Forms asmref'inden kur
     static dnlib.DotNet.TypeRef formRef45(dnlib.DotNet.ModuleDef mod) {
         var wf = mod.GetAssemblyRefs().FirstOrDefault(a => a.Name == "System.Windows.Forms");
@@ -19,7 +19,7 @@ class nbfixctor2 {
         var mod = ModuleDefMD.Load(args[0]);
         int fixedBodies = 0;
 
-        // BCL assembly cache — external base tipler icin
+        // BCL assembly cache — for external base types
         var asmCache = new System.Collections.Generic.Dictionary<string, AssemblyDef>();
 
         foreach (var t in mod.GetTypes()) {
@@ -58,7 +58,7 @@ class nbfixctor2 {
                         foreach (var gacDir in System.IO.Directory.GetDirectories(
                                      Environment.GetEnvironmentVariable("windir") + @"\Microsoft.NET\assembly\GAC_MSIL")) {
                             var dll = System.IO.Path.Combine(gacDir, "v4.0_4.0.0.0__", simple + ".dll");
-                            // basit tara: klasor adinda assembly adi gecen ilk dll
+                            // simple scan: the first DLL whose folder name contains the assembly name
                             if (gacDir.EndsWith(simple, StringComparison.OrdinalIgnoreCase)) {
                                 var files = System.IO.Directory.GetFiles(gacDir, simple + ".dll",
                                     System.IO.SearchOption.AllDirectories);
@@ -80,13 +80,13 @@ class nbfixctor2 {
                 }
                 if (baseCtor == null) continue;
 
-                // import: bAsm'den bu module'e tasi
+                // import: move from bAsm into this module
                 var imported = mod.Import(baseCtor);
                 if (imported == null) {
                     Console.WriteLine($"[skip] import null: {t.FullName}::{m.Name}");
                     continue;
                 }
-                // body 1 instr (sadece ret) olabilir — genislet
+                // the body may be 1 instr (just ret) — extend it
                 if (ins.Count < 3) {
                     while (ins.Count < 3) ins.Add(OpCodes.Nop.ToInstruction());
                 }
@@ -105,11 +105,11 @@ class nbfixctor2 {
 
         // NecroBit 7.5: bazi call/newobj instruction'lari NULL operand'li
         // (obfuscated token cozulmemis) — dnlib yazimi patlar. nop'la.
-        // ANCAK VM tiplerinin (obfuscated ad, AoIBWWl... gibi) bodylerindeki
-        // null-operand'lar VM blob'unun gecerli parcasi olabilir — onlara
-        // dokunma (t3'te InvalidProgramException dersi). Sadece
+        // BUT the bodies of VM types (obfuscated names like AoIBWWl...)
+        // may have null-operands that are a valid part of the VM blob — for those
+        // leave untouched (InvalidProgramException lesson from t3). Only
         // kullanici tiplerinde (non-obfuscated) nop'la. Ayirt etme:
-        // tip adi C# identifier rulelarina uymayan = obfuscated.
+        // a type name that breaks C# identifier rules = obfuscated.
         int nulledOps = 0;
         foreach (var t in mod.GetTypes()) {
             bool obfType = !System.Text.RegularExpressions.Regex.IsMatch(
@@ -132,12 +132,12 @@ class nbfixctor2 {
                 }
             }
         }
-        // yazim patliyorsa: null-operand'li kalan her instruction'i atlayamayiz.
-        // VM tipi + null operand + kullanici tipinden CAGRILIYOR olabilir
+        // if the write blows up: we cannot skip every remaining null-operand instruction.
+        // may be a VM type + null operand + CALLED FROM a user type
         // (call VM metodu). Bu statusda o call nop'lanmali — kullanici
         // tarafinda. Ek pass: tum methodlarda null-operand'li InlineMethod
-        // call'lari nop'la AMA sadece tipin kendisi obfuscated DEGILSE
-        // VE operand null olan instruction call VEYA ldftn ise.
+        // nop the calls BUT ONLY IF the type itself is not obfuscated
+        // AND the instruction with a null operand is a call OR ldftn.
         int extraNulled = 0;
         foreach (var t in mod.GetTypes()) {
             bool obfType = !System.Text.RegularExpressions.Regex.IsMatch(
@@ -161,14 +161,14 @@ class nbfixctor2 {
         }
         // NULL-OPERAND ICEREN METOTLARI FORCE-RET YAP (t3b v2):
         // Tip silmek "Non-Static Global Method" verdi (module ref koptu).
-        // Bunun yerine: null-operand'li her METOT bodysini "ret" yap ve
-        // static+public yap — token yerinde kalir, null'lar yok deadr,
+        // instead: make every method body with a null operand "ret" and
+        // make it static+public — the token stays in place, no nulls left,
         // calllan methodlar noop-davranisi (ret) sergiler.
-        // v37: <Module>{guid}::cctor y428a callni global <Module>::cctor
-        // BASINA tasi — ayni-thread cctor reentransi m_cec alanlarini bos
+        // v37: move the y428a call from <Module>{guid}::cctor into the global <Module>::cctor
+        // move it to the TOP — same-thread cctor reentrancy clears m_cec fields
         // birakiyordu (qp ldfld m_xxx NRE). Global cctor: y428a; qp; m8DF.
         {
-            // v38b: guid tipi otomatik — NecroBit init cctor'u tasiyan:
+            // v38b: guid type automatic — the one carrying the NecroBit init cctor:
             // global cctor'un cagirdigi IKINCI method y428a-init'tir; guid
             // tipi o metodun DeclaringType'idir.
             var gmodt = mod.GetTypes().FirstOrDefault(t => t.Name == "<Module>" && t.Methods.Any(m => m.Name == ".cctor"));
@@ -198,13 +198,13 @@ gcc.Body.Instructions.Clear();
                 }
             }
         }
-        // v39: SampleForm::.cctor — qp1d5IbOJ callni kopar (ret).
-        // final15 proofi: NRE qp icinde, cagiran SampleForm cctor.
+        // v39: SampleForm::.cctor — cut the qp1d5IbOJ call (ret).
+        // final15 proof: NRE inside qp, the caller is the SampleForm cctor.
         // qp bodysi cflow+vm karisik 6318 instr; necro-bit akis
-        // bozuk body. Static init zaten AoIBWWl cctor'ta y428a ile.
+        // broken body. Static init is already handled in the AoIBWWl cctor via y428a.
         // v39b: form tipi = entry point'in DeclaringType (parametrize)
-        // v47: NB_NOV39=1 -> cctor'a dokunma (T-MAX honest probe:
-        // cctor control-init zincirini baslatiyor olabilir)
+        // v47: NB_NOV39=1 -> do not touch the cctor (T-MAX honest probe:
+        // may be starting the cctor control-init chain)
         TypeDef formType = mod.EntryPoint != null ? mod.EntryPoint.DeclaringType : null;
         if (Environment.GetEnvironmentVariable("NB_NOV39") != "1") {
         if (formType != null) {
@@ -218,10 +218,10 @@ gcc.Body.Instructions.Clear();
             }
         }
         } else { Console.WriteLine("v47: form cctor untouched"); }
-        // v40: qp1d5IbOJ callni BUTUN cctor'lardan kopar (genel).
-        // final15/16 proofi: <>c__DisplayClass5..cctor de qp cagiriyor.
-        // Global <Module>::.cctor zaten y428a+ret (v38). Diger cctor'larda
-        // qp'yi silen line cikar, kalan init akisi korunur.
+        // v40: cut the qp1d5IbOJ call from ALL cctors (general).
+        // final15/16 proof: <>c__DisplayClass5..cctor also calls qp.
+        // Global <Module>::.cctor is already y428a+ret (v38). In the other cctors
+        // remove the line that deletes qp; the remaining init flow is preserved.
         int qpCut = 0;
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
@@ -241,13 +241,13 @@ gcc.Body.Instructions.Clear();
             }
         }
         Console.WriteLine("v40: qp-call lines cut from cctor: " + qpCut);
-        // v43: cctor icindeki DIS-TIP method calllilarini kopar (integrity check).
-        // dotqw proofi: Form1.cctor -> FwBuGMUEyCuTDsoWOn.t8SNRSZCo() -> "tampered" throw.
+        // v43: cut the out-of-type method calls inside the cctor (integrity check).
+        // dotqw proof: Form1.cctor -> FwBuGMUEyCuTDsoWOn.t8SNRSZCo() -> "tampered" throw.
         // Isim-obfuscation temiz harflerden de uretebiliyor (FwBuGMUEyCuTDsoWOn),
-        // regex yeterli degil. Kural: .cctor bodysindeki call/callvirt/newobj
+        // regex is not enough. Rule: for call/callvirt/newobj inside a .cctor body
         // operand'i BASKA bir tipe aitse (declaring != cctor'in tipi ve corlib
-        // degilse) at — NecroBit init zaten runtime'ta, kullanici cctor'unda
-        // kalan dis-tip calllari check'tir. Govde bosaldiysa ret.
+        // if not) drop it — NecroBit init already happens at runtime; in the user cctor
+        // the remaining cross-type calls ARE the check. If the body became empty, ret.
         bool noV43 = Environment.GetEnvironmentVariable("NB_NOV43") == "1";
         int obfCallCut = 0;
         foreach (var t in mod.GetTypes()) {
@@ -261,9 +261,9 @@ gcc.Body.Instructions.Clear();
                     if (!(i.Operand is IMethod im2)) continue;
                     var dt2 = im2.DeclaringType;
                     if (dt2 == null) continue;
-                    // ayni tip icerisinde call (normal init) — dokunma:
+                    // call within the same type (normal init) — leave it:
                     if (dt2 == t) continue;
-                    // corlib / bilinen BCL tipleri — dokunma:
+                    // corlib / known BCL types — leave untouched:
                     var asmRef = dt2.DefinitionAssembly;
                     if (asmRef != null && (asmRef.Name == "mscorlib" || asmRef.Name == "System" ||
                         asmRef.Name.StartsWith("System.") || asmRef.Name == "netstandard" ||
@@ -276,7 +276,7 @@ gcc.Body.Instructions.Clear();
         }
         Console.WriteLine("v43: external-type check calls cut: " + obfCallCut);
         // v44: "tampered"/integrity-check stringi iceren METOTLARI force-ret
-        // yap (tipi degil — check ve init ayni tipte olabilir, 7.5.9.1'de
+        // do it (per-type, not per-module — check and init can share a type; in 7.5.9.1
         // 206-methodlu tipin doneini oldurmek init'i de olduruyor ve NRE
         // uretiyordu). Sadece stringi TASIYAN method + o metodu dogrudan
         // cagiran linelar target alinir.
@@ -309,8 +309,8 @@ gcc.Body.Instructions.Clear();
             m.Body.KeepOldMaxStack = true;
             tamperKill++;
             // cagiran linelari nop'la (check void donuslu olsa bile
-            // bazi calllar sonucu kullanir — nop stack dengesizligi
-            // vermez, deger stackte kalir)
+            // some calls use their result — nop leaves the stack unbalanced
+            // leaves it on the stack)
             foreach (var t in mod.GetTypes()) {
                 foreach (var m2 in t.Methods) {
                     if (!m2.HasBody || m2 == m) continue;
@@ -327,8 +327,8 @@ gcc.Body.Instructions.Clear();
         }
         if (tamperKill > 0)
             Console.WriteLine("v44: check method killed: " + tamperKill + " | calls nopped: " + tamperCallCut);
-        // v41: Main cflow sonsuz dongu — temiz WinForms bodysi yaz.
-        // final17 proofi: %100 CPU, window yok, V_6=17 switch IL_02ad loop.
+        // v41: the Main cflow loops forever — write a clean WinForms body.
+        // final17 proof: 100% CPU, no window, V_6=17 switch IL_02ad loop.
         {
             var t = formType != null ? formType : mod.GetTypes().FirstOrDefault(x => x.Name == "SampleForm");
             if (t == null) { Console.WriteLine("v41: form tipi yok"); }
@@ -346,9 +346,9 @@ gcc.Body.Instructions.Clear();
                 }
             }
             if (evs == null || run == null) {
-                // v45: MAX korumada cflow Main'in icine gomulur —
+                // v45: under MAX protection cflow is embedded into Main —
                 // EnableVisualStyles/Run MemberRef'leri dispatch VM
-                // icinde kalir, gorunmez. Ama ctor YOK OLMAZ (form
+                // stays inside, invisible. But the ctor CANNOT DISAPPEAR (the form
                 // tipinde .ctor her zaman durur). Temiz WinForms
                 // akisini MemberRef'leri ELLE kurarak yaz:
                 // System.Windows.Forms.Application::Run(Form).
@@ -356,7 +356,7 @@ gcc.Body.Instructions.Clear();
                 if (wfAsm45 != null) {
                     var appRef45 = new TypeRefUser(mod, "System.Windows.Forms", "Application", wfAsm45);
                     // STATIC methodlar: CreateStatic — CreateInstance thisptr ekler,
-                    // MissingMethodException'in koku (v45b dersi)
+                    // the root of the MissingMethodException (v45b lesson)
                     var evs45 = new MemberRefUser(mod, "EnableVisualStyles",
                         MethodSig.CreateStatic(mod.CorLibTypes.Void), appRef45);
                     var sctrd45 = new MemberRefUser(mod, "SetCompatibleTextRenderingDefault",
@@ -411,7 +411,7 @@ gcc.Body.Instructions.Clear();
         // v46 DURUSTLUK DERSI: manually overwritek kontrolleri olduruyor — original
         // form 2 TextBox + register Button yaratirken v41e bos form veriyor.
         // Yeni rule: NB_NOV46=1 ise manually overwrite YOK — original (NecroBit
-        // ccozuumu) ctor birakilir; sadece Text yaz.
+        // solution) the ctor is kept; only Text is set.
         // v50: NB_V50=1 -> full control-tree ctor. The disk stub ctor is a
         // DECOY (call null = InvalidProgramException when executed), so with
         // NB_NOV46 the process dies. v50 builds the REAL UI from the dumped
@@ -599,7 +599,7 @@ gcc.Body.Instructions.Clear();
         }
         } else { Console.WriteLine("v46: manually ctor overwrite OFF — original ctor preserved"); }
         // v16: Eziriz nag-check taramasi — ldstr "Eziriz" iceren her
-        // method nag-check'tir; bodysini ret yap (throw ydead kapanir).
+        // the method is the nag-check; ret its body (the throw path closes).
         int nagKilled = 0;
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
@@ -620,15 +620,15 @@ gcc.Body.Instructions.Clear();
 
         // v17: ZORLA-FORCE-RET — rcheck'in null-operand listesinin TAMAMI
         // (18 method, t3b). hasNull kosulu KALDIRILDI: dnlib yazimi null
-        // operand'i kendi urettigi token'la dolduruyor, yazim SONRASI
-        // hasNull artik true YAKALAMIYOR. Liste isim bazli.
-        // HARIC TUTULANLAR (ham-body post-inject ile kurtarilir):
-        //   qp1d5IbOJ (hook kurucu — asla dokunma),
+        // fills the operand with a token it generates itself, AFTER the write
+        // hasNull is no longer catching these. The list is name-based.
+        // EXCLUDED (recoverable via raw-body post-inject):
+        //   qp1d5IbOJ (hook installer — never touch),
         //   y428a5a7 (alan-init, 5702B — .nbinj ham inject),
         //   m8DF140CC1AA41F4 (274B — .nbinj ham inject),
         //   SampleForm::Main (910B — .nbinj ham inject),
         //   VM792.* (27B — .nbinj ham inject),
-        //   c6eqX6NsSy (nag-check, nag-kill zaten retledi)
+        //   c6eqX6NsSy (nag-check; nag-kill already retd it)
         var forceKill = new System.Collections.Generic.HashSet<string> {
             "umu9nZfKOD9dhX9jX7", "KTIUiOjFB5WkrrnKyf",
             "aSXlaypSQk", "iavloN2HM3", "c4DlICH2Rx", "dIhlRD8H3g",
@@ -660,25 +660,25 @@ gcc.Body.Instructions.Clear();
         }
         Console.WriteLine($"force-ret method: {forceRetCount}");
 
-        // v18: yazim-oncesi null-operand kurtarma — forceKill/ham-inject
+        // v18: pre-write null-operand rescue — forceKill/raw-inject
         // DISINDAKI methodlardaki null call/field'lara GECICI dummy token
-        // bagla ki dnlib yazabilsin. (Ham-inject sonra bu bodyleri zaten
-        // original byte'larla ezecek; gecici dummy sadece yazimi kurtarir.)
-        // v19: null-operand'li instruction'lari TAMAMEN SIL (nop degil).
-        // NecroBit sahte-body null-call'lari atildiginda kalan akis
+        // bind them so dnlib can write. (Raw-inject later overwrites these bodies
+        // with original bytes; the temporary dummy only saves the write.)
+        // v19: DELETE null-operand instructions entirely (not nop).
+        // once NecroBit fake-body null-calls are dropped, the remaining flow
         // ANLAMLI deadyor (KCFlcDdR6L: ldarg.0+ldfld+callvirt+ret).
         // Metot doneen bosaliyorsa donus-tipine gore dummy+ret.
         int nullRemoved = 0, hollowFilled = 0;
         // NB_NOSIL=1: null-operand silme atlanir (NecroBit runtime-restore
-        // sinifi targetlerde — 7.5.9.1, dotqw — null-wipe init call zincirini
+        // class targets — 7.5.9.1, dotqw — the null-wipe init call chain
         // kiriyor; restore bekleyen body bozuluyor). Sadece check-strip
         // (v43/v44) uygulanir.
         bool noSil = Environment.GetEnvironmentVariable("NB_NOSIL") == "1";
         if (noSil) {
-            // v45: NB_NOSIL modunda null operandlar SILINMEZ ama dnlib yine de
+            // v45: under NB_NOSIL the null operands are NOT deleted but dnlib still
             // null operand yazamaz -> gecici dummy MemberRef/MemberRefUser bagla.
-            // Davranis: NecroBit runtime-restore callyi zaten ele gecirir;
-            // dummy token sadece yazimi saglar. v18'in genisletilmisi.
+            // Behavior: NecroBit runtime-restore intercepts the call anyway;
+            // the dummy token only enables the write. Extension of v18.
             int dummyBound = 0;
             var dummyMrr = new MemberRefUser(mod, "d",
                 MethodSig.CreateInstance(mod.CorLibTypes.Void), mod.CorLibTypes.Object.TypeDefOrRef);
@@ -705,7 +705,7 @@ gcc.Body.Instructions.Clear();
             foreach (var m in t.Methods) {
                 if (!m.HasBody) continue;
                 if (forceKill.Contains(m.Name.String)) continue;
-                // qp1d5IbOJ/m8DF/Main ham-inject HARIC; y428a'nin null'u
+                // EXCEPT the qp1d5IbOJ/m8DF/Main raw-inject; y428a's null
                 // yazimi kiriyor — SIL (ham inject sonra ezecek):
                 if (m.Name.String == "qp1d5IbOJ" || m.Name.String == "m8DF140CC1AA41F4" ||
                     m.Name.String == "Main") continue;
@@ -734,8 +734,8 @@ gcc.Body.Instructions.Clear();
                     if (eh.FilterStart != null) branchTargets.Add(eh.FilterStart);
                 }
                 foreach (var i in m.Body.Instructions) {
-                    // dnlib null operand'i bos MemberRef ile dolduruyor:
-                    // gecersiz operand tespiti — isimsiz/null-isim.
+                    // dnlib fills the null operand with an empty MemberRef:
+                    // invalid operand detection — nameless/null-name.
                     if (i.Operand is IMethod im) {
                         if (!UTF8String.IsNullOrEmpty(im.Name)) continue;
                     } else if (i.Operand is IField iff) {
@@ -778,7 +778,7 @@ gcc.Body.Instructions.Clear();
         }
         Console.WriteLine($"null-wiped: {nullRemoved}, freed-dummy: {hollowFilled}");
         } // end NB_NOSIL guard
-        // DEBUG: yazim-oncesi kalan supheli operand'lar:
+        // DEBUG: remaining suspicious operands before write:
         int argBound = 0;
         foreach (var t in mod.GetTypes()) {
             foreach (var m in t.Methods) {
@@ -807,15 +807,15 @@ gcc.Body.Instructions.Clear();
         }
         Console.WriteLine($"v48: arg-bound: {argBound}");
         // <Module>.cctor + m8DF (nag-check) fully disabled:
-        // cctor -> ret; m8DF -> ret. ctor fix'li oldugu icin guvenli.
+        // cctor -> ret; m8DF -> ret. Safe because the ctor is fixed.
         // NecroBit runtime (VM792/gttro/null-call'lar) cctor'suz da
         // kendi init'ini Main icerisinde yapar — T1'de prooflandi.
         // v15: init-kill KALDIRILDI — NecroBit hook kurulumu qp1d5IbOJ + cctor zincirinde;
-        // kopartilinca runtime body-replace yapilmiyor, JIT gecersiz IL goruyor.
+        // once severed, runtime body-replace no longer happens; the JIT sees invalid IL.
         Console.WriteLine($"second pass nop: {extraNulled}");
 
         // maxstack yeniden hesaplat (t3b: KeepOldMaxStack qvU94'te
-        // InvalidProgramException uretti — eski deger tasi yanlis)
+        // produced InvalidProgramException — the old value move was wrong
 
         var opts = new ModuleWriterOptions(mod);
         opts.MetadataOptions.Flags |= MetadataFlags.PreserveAll;
