@@ -63,3 +63,6 @@ v3/multi-target/real-targets/c10_v73/_statedump.*
 v3/multi-target/real-targets/c10_v73/_uia.*
 v3/multi-target/real-targets/c10_v73/err.txt
 v3/multi-target/real-targets/c10_v73/out.txt
+
+# internal strategy notes - never commit
+POSITIONING.md
