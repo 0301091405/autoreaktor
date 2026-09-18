@@ -50,3 +50,5 @@ v3/multi-target/real-targets/t4y/t4y75-nb2-rt.exe
 v3/multi-target/real-targets/t4y/t4y75-patched.exe
 v3/multi-target/real-targets/t4y/t4y75-orig-merged*.exe
 v3/multi-target/real-targets/t4y/e*.txt
+obj/
+obj_check*
