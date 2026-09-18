@@ -23,7 +23,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 NBWALK = HERE / "nbwalk" / "bin" / "Release" / "net48" / "nbwalk.exe"
-RUNNER = HERE.parent.parent / "tools" / "krypton" / "Krypton.Runner" / "bin" / "Release" / "net48" / "Krypton.Runner.exe"
+# tools/ sits next to autoreaktor under decodehub-week1; fall back to the
+# sibling layout for checkouts where krypton lives inside autoreaktor.
+_TOOLS = HERE.parent.parent / "tools"
+if not (_TOOLS / "krypton" / "Krypton.Runner" / "bin" / "Release" / "net48" / "Krypton.Runner.exe").exists():
+    _TOOLS = HERE.parent / "tools"
+RUNNER = _TOOLS / "krypton" / "Krypton.Runner" / "bin" / "Release" / "net48" / "Krypton.Runner.exe"
 
 
 def sh(cmd, cwd, timeout=240):

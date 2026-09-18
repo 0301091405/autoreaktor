@@ -52,3 +52,14 @@ v3/multi-target/real-targets/t4y/t4y75-orig-merged*.exe
 v3/multi-target/real-targets/t4y/e*.txt
 obj/
 obj_check*
+
+# R9 (v7.3 challenge) — third-party binaries stay local-only
+v3/multi-target/real-targets/c10_v73/*.exe
+v3/multi-target/real-targets/c10_v73/*.dll
+v3/multi-target/real-targets/c10_v73/rename_test/
+v3/multi-target/real-targets/c10_v73/_cc_dump.*
+v3/multi-target/real-targets/c10_v73/_scan_exit.*
+v3/multi-target/real-targets/c10_v73/_statedump.*
+v3/multi-target/real-targets/c10_v73/_uia.*
+v3/multi-target/real-targets/c10_v73/err.txt
+v3/multi-target/real-targets/c10_v73/out.txt
