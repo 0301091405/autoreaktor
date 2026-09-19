@@ -86,12 +86,16 @@ available build (Reactor 7.5 DEMO, all 14 Quick Settings enabled):
 - nbdump harvest: 143/143 NecroBit methods matched (100.0% coverage)
 - nbrebuild: 48 call-sites substituted in 5 methods, 188 dead dummies
   nopped, 0 unresolved
-- launch: the rebuilt binary throws at startup (0xE0434352, exception
-  printer itself fails to render - broken type load)
+- launch (rebuild directly on the packed file): the binary throws at
+  startup (0xE0434352, first-chance BadImageFormatException "the
+  signature is incorrect")
 
-Conclusion: the harvest and substitution contracts hold on 7.5, but the
-plain pipeline is necessary-not-sufficient on all-flags builds. The t-max
-row (behavior parity via nbfixctor2 v54 hand control-tree ctor) remains
-the required route there: the v54 output launches and stays alive (T+6s
-verified), while the pipeline-only rebuild hits the same decoy-ctor trap
-this matrix documented for plain restore attempts.
+Root cause and fix (run-verified): writing the substituted module
+straight from the packed file breaks the load signature, but running
+the nbfixctor2 pass first (NB_V50=1 hand control-tree ctor) and then
+nbrebuild produces a clean launch - ALIVE at T+8s with the GUI up.
+Substitution numbers unchanged (143/143 fragments, 0 unresolved); the
+ctor fix rewrites the broken load path before the rebuild write, so
+the final write round-trips cleanly. The v54 hand-ctor remains the
+required first step on all-flags builds; the pipeline then completes
+the NecroBit restore.
