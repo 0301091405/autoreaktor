@@ -1,0 +1,44 @@
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build C# tools (net48)
+        shell: pwsh
+        run: |
+          $projects = @(
+            'verify_target/verify_target.csproj',
+            'proof_loader/proof_loader.csproj',
+            'v3/nbrebuild/nbrebuild.csproj',
+            'v3/nbwalk/nbwalk.csproj',
+            'v3/mdread/mdread.csproj',
+            'v3/nbprof/nbprof.csproj',
+            'v3/nagstrip/nagstrip.csproj'
+          )
+          $failed = $false
+          foreach ($p in $projects) {
+            dotnet build $p -c Release
+            if ($LASTEXITCODE -ne 0) { Write-Host "::error file=$p::build failed"; $failed = $true }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Python syntax checks
+        shell: bash
+        run: |
+          set -e
+          for f in autoreaktor.py hunt.py hunt_list.py vmres_extract.py                    v3/nbdump.py v3/nbdumphost.py v3/nbfix.py                    v3/jitdump/nbjitdump.py v3/jitdump/jitdrive.py                    v3/jitdump/auto_stubmap.py v3/jitdump/build_hook.py                    v3/jitdump/merge_prep.py; do
+            python -m py_compile "$f"
+          done
