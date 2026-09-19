@@ -661,7 +661,7 @@ gcc.Body.Instructions.Clear();
         Console.WriteLine($"force-ret method: {forceRetCount}");
 
         // v18: pre-write null-operand rescue — forceKill/raw-inject
-        // DISINDAKI methodlardaki null call/field'lara GECICI dummy token
+        // null calls/fields in methods OUTSIDE the set get a TEMPORARY dummy token
         // bind them so dnlib can write. (Raw-inject later overwrites these bodies
         // with original bytes; the temporary dummy only saves the write.)
         // v19: DELETE null-operand instructions entirely (not nop).

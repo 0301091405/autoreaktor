@@ -1,5 +1,5 @@
 // nbilmerge.cs v6 — token filter fixed: large rids
-// (MethodDesc chunk artefaktlari) atlanir ama modul icindeki
+// (MethodDesc chunk artifacts) are skipped, but the ones inside the module
 // all tokens are tried; real problem: the byToken lookup misses 108's
 // all miss: dump tokens are & 0xFFFFFF while the module's
 // rids may not line up. full scan first:
