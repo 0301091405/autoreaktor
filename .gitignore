@@ -1,68 +1,43 @@
-*.dmp
-bin/
-obj/
+.gitignore
 __pycache__/
 *.pyc
-test_*/
-_ar_out/
-*_ar/
-tools/
-.build/
-*.user
-# v3: no protected binaries, no rebuild outputs, no dumps in the repo
-v3/test-nbdump/
-v3/test-rebuild/
-v3/blob-analysis/
-v3/nbhook.py
-v3/nbwalk/dump_*
-v3/nbwalk/*.txt
-nbhost_dump.dmp
-
-# packed test binaries stay local-only (login string embeds a personal marker)
-v3/multi-target/sample.exe
-v3/multi-target/t2/sample.exe
-v3/multi-target/t3/sample.exe
-r3_md_*.bin
-# third-party protected binaries stay local-only
-v3/multi-target/real-targets/c3/patch_the_login.exe
-v3/multi-target/real-targets/c1/*.exe
-v3/multi-target/real-targets/c2/*.exe
-v3/multi-target/real-targets/c4/*.exe
-v3/multi-target/real-targets/c5/*.exe
-v3/multi-target/real-targets/c4/crackpass_meta.bin
-v3/multi-target/real-targets/c_*.zip
-v3/multi-target/real-targets/c_*.zip
-v3/multi-target/real-targets/c7_dotqw/
-v3/multi-target/real-targets/c8_lostchall/
-v3/multi-target/real-targets/c9_goodlife/
-
-# JIT-dump / test artifacts
-*.obj
-nbjit_launch.exe
-t1v44.exe
-t4v44.exe
-findtamper.exe
-jitdump2/
-v3/multi-target/t1/t1-restored.exe
-v3/multi-target/real-targets/t4y/t4y75-restored*.exe
-v3/multi-target/real-targets/t4y/t4y75-iso.exe
-v3/multi-target/real-targets/t4y/t4y75-nb2-rt.exe
-v3/multi-target/real-targets/t4y/t4y75-patched.exe
-v3/multi-target/real-targets/t4y/t4y75-orig-merged*.exe
-v3/multi-target/real-targets/t4y/e*.txt
+bin/
 obj/
 obj_check*
+*.obj
+*.exe
 
-# R9 (v7.3 challenge) — third-party binaries stay local-only
-v3/multi-target/real-targets/c10_v73/*.exe
-v3/multi-target/real-targets/c10_v73/*.dll
-v3/multi-target/real-targets/c10_v73/rename_test/
-v3/multi-target/real-targets/c10_v73/_cc_dump.*
-v3/multi-target/real-targets/c10_v73/_scan_exit.*
-v3/multi-target/real-targets/c10_v73/_statedump.*
-v3/multi-target/real-targets/c10_v73/_uia.*
-v3/multi-target/real-targets/c10_v73/err.txt
-v3/multi-target/real-targets/c10_v73/out.txt
+# third-party libraries are fetched by tools/setup.sh, never committed
+dnlib.dll
+**/dnlib.dll
+
+test_necrobit/
+test_orig_dump/
+test_reactor/
+test_tuts/
+
+# lab material: packed/rebuilt/dumped binaries, per-target scratch dirs,
+# third-party challenge binaries and their run logs - local only
+v3/multi-target/
+v3/test-nbdump/
+v3/test-rebuild/
+v3/test-blob/
+v3/test-orig-dump/
+v3/test-reactor/
+v3/test-tuts/
+v3/blob-analysis/
+v3/nbwalk/dump_*
+v3/nbwalk/walk*.txt
+v3/nagstrip/*.log
+*.log
 
 # internal strategy notes - never commit
 POSITIONING.md
+
+# dump artifacts
+*.dmp
+*.bin
+nbhost_dump.dmp
+# third-party tool binaries fetched by tools/setup.sh - never commit
+tools/*
+!tools/setup.sh
