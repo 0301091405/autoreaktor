@@ -53,7 +53,7 @@ namespace Nbprof
                     Path.GetDirectoryName(typeof(NbProfiler).Assembly.Location ?? "."),
                     "nbprof_dump.json");
 
-                var info = (ICorProfilerInfo)pICorProfilerInfoUnk;
+                var info = (ICorProfilerInfo)Marshal.GetObjectForIUnknown(pICorProfilerInfoUnk);
                 // We only need JIT notifications. Everything else: off.
                 info.SetEventMask(0x10 /* COR_PRF_MONITOR_JIT_COMPILATION */
                                   | 0x2 /* MODULE_LOADS for unload flush */);
@@ -199,12 +199,90 @@ namespace Nbprof
         public int RuntimeSuspendStarted(int reason, ref int fSuspend) { fSuspend = 1; return 0; }
         public int RuntimeThreadResumed(int threadId) => 0;
         public int RuntimeThreadSuspended(int threadId) => 0;
+        public int ExceptionSearchFunctionLeave(int functionId) => 0;
+        public int ExceptionThrown(int thrownObjectId) => 0;
+        public int ExceptionUnwindFunctionLeave(int functionId) => 0;
+        public int JITInlining(int functionId, int callerFunctionId, ref bool pfShouldInline) { pfShouldInline = false; return 0; }
+        public int MovedReferences(int cMovedRefRanges, int[] oldStart, int[] newStart, int[] cMoved) => 0;
+        public int ObjectReferences(int objectId, int classId, int cRefs, int[] refObjIds) => 0;
+        public int RemotingClientInvocationReturned() => 0;
+        public int RemotingServerReceivingMessage() => 0;
+        public int RemotingServerSendingReply() => 0;
+        public int RuntimeResumeStarted() => 0;
         public int SearchCallbacks() => 0;
         public int ThreadAssignedToOSThread(int managedThreadId, int osThreadId) => 0;
         public int ThreadCreated(int managedThreadId) => 0;
         public int ThreadDestroyed(int managedThreadId) => 0;
         public int UnmanagedToManagedTransition(int functionId, int reason) => 0;
         public int ManagedToUnmanagedTransition(int functionId, int reason) => 0;
+    }
+
+
+    /// ICorProfilerCallback vtable subset (CorProfilerCallback CLSID).
+    /// Slot order follows the CLR interface definition; the runtime only
+    /// calls what SetEventMask subscribes to, but QI requires the full shape.
+    [ComImport, Guid("B7A3F5E0-9C42-4A6D-8E1F-001122334455"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface ICorProfilerCallback
+    {
+        [PreserveSig] int Initialize(IntPtr pICorProfilerInfoUnk);
+        [PreserveSig] int Shutdown();
+        [PreserveSig] int AppDomainCreationFinished(int appDomainId, int hrStatus);
+        [PreserveSig] int AppDomainShutdownFinished(int appDomainId, int hrStatus);
+        [PreserveSig] int AssemblyLoadFinished(int assemblyId, int hrStatus);
+        [PreserveSig] int AssemblyUnloadFinished(int assemblyId, int hrStatus);
+        [PreserveSig] int ModuleLoadFinished(int moduleId, int hrStatus);
+        [PreserveSig] int ModuleUnloadFinished(int moduleId, int hrStatus);
+        [PreserveSig] int ModuleAttachedToAssembly(int moduleId, int assemblyId);
+        [PreserveSig] int ClassLoadFinished(int classId, int hrStatus);
+        [PreserveSig] int ClassUnloadFinished(int classId, int hrStatus);
+        [PreserveSig] int FunctionEnter(int funcId, int frameInfoVTable, int frame, int argumentInfo);
+        [PreserveSig] int FunctionLeave(int funcId, int frameInfoVTable, int frame, int argumentInfo);
+        [PreserveSig] int FunctionTailcall(int funcId, int frameInfoVTable, int frame, int argumentInfo);
+        [PreserveSig] int JITCompilationStarted(int functionId, bool isSafeToBlock);
+        [PreserveSig] int JITCompilationFinished(int functionId, int hrStatus, int fIsSafeToBlock);
+        [PreserveSig] int JITCachedFunctionSearchStarted(int functionId, ref bool pbUseCachedFunction);
+        [PreserveSig] int JITCachedFunctionSearchFinished(int functionId, int result);
+        [PreserveSig] int JITFunctionPitched(int functionId);
+        [PreserveSig] int JITInlining(int functionId, int callerFunctionId, ref bool pfShouldInline);
+        [PreserveSig] int ThreadCreated(int managedThreadId);
+        [PreserveSig] int ThreadDestroyed(int managedThreadId);
+        [PreserveSig] int ThreadAssignedToOSThread(int managedThreadId, int osThreadId);
+        [PreserveSig] int RemotingClientInvocationReturned();
+        [PreserveSig] int RemotingServerSendingReply();
+        [PreserveSig] int RemotingServerReceivingMessage();
+        [PreserveSig] int UnmanagedToManagedTransition(int functionId, int reason);
+        [PreserveSig] int ManagedToUnmanagedTransition(int functionId, int reason);
+        [PreserveSig] int RuntimeSuspendStarted(int reason, ref int fSuspendNeeded);
+        [PreserveSig] int RuntimeSuspendFinished(int hrStatus);
+        [PreserveSig] int RuntimeSuspendAborted();
+        [PreserveSig] int RuntimeResumeStarted();
+        [PreserveSig] int RuntimeResumeFinished();
+        [PreserveSig] int RuntimeThreadSuspended(int threadId);
+        [PreserveSig] int RuntimeThreadResumed(int threadId);
+        [PreserveSig] int MovedReferences(int cMovedRefRanges, int[] oldStart, int[] newStart, int[] cMoved);
+        [PreserveSig] int ObjectAllocated(int objectId, int classId);
+        [PreserveSig] int ObjectsAllocated(int cObjects, int[] objects);
+        [PreserveSig] int ObjectReferences(int objectId, int classId, int cRefs, int[] refObjIds);
+        [PreserveSig] int ExceptionThrown(int thrownObjectId);
+        [PreserveSig] int ExceptionSearchFunctionEnter(int functionId);
+        [PreserveSig] int ExceptionSearchFunctionLeave(int functionId);
+        [PreserveSig] int ExceptionSearchFilterEnter(int functionId);
+        [PreserveSig] int ExceptionSearchFilterLeave();
+        [PreserveSig] int ExceptionSearchCatcherFound(int functionId);
+        [PreserveSig] int ExceptionOSHandlerEnter(int __unused);
+        [PreserveSig] int ExceptionOSHandlerLeave(int __unused);
+        [PreserveSig] int ExceptionUnwindFunctionEnter(int functionId);
+        [PreserveSig] int ExceptionUnwindFunctionLeave(int functionId);
+        [PreserveSig] int ExceptionUnwindFinallyEnter(int functionId);
+        [PreserveSig] int ExceptionUnwindFinallyLeave();
+        [PreserveSig] int ExceptionCatcherEnter(int functionId, int objectId);
+        [PreserveSig] int ExceptionCatcherLeave();
+        [PreserveSig] int ExceptionCLRCatcherFound();
+        [PreserveSig] int ExceptionCLRCatcherExecute();
+        [PreserveSig] int ExceptionThreadFilterEnter(int functionId);
+        [PreserveSig] int ExceptionThreadFilterLeave();
+        [PreserveSig] int COMClassicVTableCreated(int wrappedClassId, int guid, IntPtr ppVTable, int cSlots);
+        [PreserveSig] int COMClassicVTableDestroyed(int wrappedClassId, int guid, IntPtr pVTable);
     }
 
     /// The subset of ICorProfilerInfo we need (avoids full interop headers).
