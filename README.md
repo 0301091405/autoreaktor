@@ -95,6 +95,7 @@ Documented in the READMEs, measured on real targets, no inflation:
 - **Code Virtualization** methods never pass `compileMethod` as IL — that layer stays with Krypton, and only the protection-method subset is reliably devirtualized.
 - **Coverage** is bounded by what the process JITs during the dump window; a GUI driver (`v3/jitdump/jitdrive.py`) grows it but 100% on arbitrary targets is not guaranteed.
 - Demo-packed binaries older than 14 days refuse to run (Eziriz demo timer) — neutralize the timer check first.
+- **Ordering on all-flags 7.5 builds**: running `nbrebuild` directly on the packed file can produce a module that throws `BadImageFormatException` at load. Run the `nbfixctor2` ctor repair first (`NB_V50=1`), then `nbrebuild`; the combined output launches clean (verified T+8s with GUI on the all-flags target in `v3/multi-target/T-MATRIX.md`).
 
 ## Repo layout
 
