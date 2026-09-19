@@ -6,7 +6,7 @@ loads and dumps the CIL body NecroBit decodes at JIT time as
 m_XXXXXXXX.bin to disk. Proven: 7.5.9.1 T4Y target, 238 bodies /
 7060 IL bytes.
 
-Kullanim:
+Usage:
   python nbjitdump.py <target.exe> [--out DIR] [--wait 30] [--force-run]
 
 Output:
@@ -47,7 +47,7 @@ def corflags_of(path):
     cdir_rva = struct.unpack_from("<I", d, ddoff + 14 * 8)[0]
     if not cdir_rva:
         return None, False
-    # cdir_rva VIRTUAL address — file boyutuyla karsilastirma YANLIS:
+    # cdir_rva is a VIRTUAL address - comparing to file size is WRONG:
     # in small DLLs RVA can exceed file size (alignment). The
     # resolution is below; here the 0 check alone is correct (g5 bug fix).
     nsec = struct.unpack_from("<H", d, pe + 6)[0]
@@ -69,7 +69,7 @@ def corflags_of(path):
 
 
 def is_readytorun(path):
-    """R2R (ReadyToRun) targetlerde clrjit KULLANILMAZ — hook islevsiz.
+    """R2R (ReadyToRun) targets do not use clrjit - the hook is useless.
     R2R debug directory tipi 0x11 (IMAGE_DIRECTORY_TYPE_EXCEPTION)
     an R2R entry is found instead of COR_RSDS; simple threshold: if debug dir
     type 0x11 exists + an 'RTR' marker in .rsrc. Practical scan:
@@ -119,7 +119,7 @@ def main():
     # --- target classification (critical for generality) ---
     flags, managed = corflags_of(tgt)
     if not managed:
-        # .NET Core/5+ apphost exe: native gorunumlu stub, yanindaki
+        # .NET Core/5+ apphost exe: a native-looking stub, the managed dll
         # <stem>.dll is the real managed module. If the DLL exists, route to it.
         stem = tgt.with_suffix(".dll")
         if stem.exists():
@@ -136,7 +136,7 @@ def main():
         arch = "x64"
         print("[info] AnyCPU — 64-bit process modu")
     elif is_readytorun(tgt):
-        print("[!] ReadyToRun — clrjit kullanilmiyor, JIT dump islevsiz")
+        print("[!] ReadyToRun - clrjit is not used, JIT dump is useless")
         return 3
     else:
         arch = "x86" if pe_machine(tgt) == 0x14C else "x64"

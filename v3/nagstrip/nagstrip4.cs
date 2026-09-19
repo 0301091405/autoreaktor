@@ -3,7 +3,7 @@
 // What the previous two attempts taught us:
 //   v2 (remove the call from the list): breaks the branch target
 //   v3 (nop the call but Clear() the runtime method body): Clear()
-//       branch targetlerini kiriyor — cunku KALDIRILAN instruction'lar
+//       branch targets break, because REMOVED instructions
 //       recorded as branch targets of other methods.
 // correct approach: NOP EVERY instruction in the runtime method body,
 // ret the last one (the list stays full — Instruction objects stay in place,

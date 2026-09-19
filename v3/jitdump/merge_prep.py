@@ -5,16 +5,16 @@
 # 0x600 = 32BITREQUIRED. Hmm, aynisi dotqw'de de.
 # Practical diagnosis: start the t1 target WITHOUT the launcher,
 # with a COMPlus variable in python's env? Most robust path:
-# .NET profiler env (COR_ENABLE_PROFILING + COR_PROFILER) ile
+# with the .NET profiler env (COR_ENABLE_PROFILING + COR_PROFILER)
 # DLL'i CLR yukler (standart, APC'ye gore cok daha guvenilir).
 # But that's a new route. PRIORITY: nbilmerge (write-back) — we
 # already have 238 bodies from 7.5.9.1. Token matching + dnlib write-back
 # yazim: nb2 filesi acilir (metadata gorunur), dump'taki IL
 # matched by patterns. First, with one of the dump files
-# nb2'deki methodlari karsilastir — IL hash eslemesi mumkun mu:
+# compare methods in nb2: is an IL-hash match possible?
 import struct, glob, os
 
-DUMPS = r'C:\Users\alt\Desktop\decodehub-week1\tools\autoreaktor\v3\multi-target\real-targets\t4y\jitdump'
+DUMPS = sys.argv[1] if len(sys.argv) > 1 else '.'
 bins = sorted(glob.glob(DUMPS + r'\m_*.bin'))
 print('dump:', len(bins))
 # hex-dump the IL of the first 3 bodies — for matching on the dnlib side

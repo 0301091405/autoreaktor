@@ -6,7 +6,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from pathlib import Path
 from hunt import hunt
 
-results = hunt(Path(r"C:\Users\alt\Desktop"))
+results = hunt(Path(sys.argv[1] if len(sys.argv) > 1 else "."))
 prot = [r for r in results if r["class"] == "protected"]
 print(f"protected hits: {len(prot)}")
 for r in prot:

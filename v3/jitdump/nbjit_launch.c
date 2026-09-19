@@ -1,5 +1,5 @@
 // nbjit_launch.c — suspended CreateProcess + APC injection launcher.
-// Kullanim: nbjit_launch.exe "target.exe [args]"
+// Usage: nbjit_launch.exe "target.exe [args]"
 // Env: NB_DLL (DLL to inject), JITDUMP_DIR (dump output dir)
 // The launcher's bitness must MATCH the target (the kernel32
 // LoadLibraryA address is in the target's bitness; x86 processes

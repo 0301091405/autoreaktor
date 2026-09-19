@@ -1,6 +1,6 @@
 // mdread2.cs — read full bodies from the dump image via dnlib (nbimage route).
 // Also: diff the method bodies of the image cut from the dump vs the disk file.
-// Kullanim: mdread2 <asm> [--dump <image.bin> --imgbase 0x...]
+// Usage: mdread2 <asm> [--dump <image.bin> --imgbase 0x...]
 using System;
 using System.IO;
 using dnlib.DotNet;

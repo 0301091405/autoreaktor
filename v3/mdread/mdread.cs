@@ -1,6 +1,6 @@
 // mdread.cs — dnlib with MethodDef body okuyucu (ground truth).
-// Amac: manually parser'im with dnlib'in okudugunu karsilastir — kim dogru?
-// Kullanim: mdread.exe <assembly> [--il]
+// Goal: compare the manual parser against what dnlib reads - who is right?
+// Usage: mdread.exe <assembly> [--il]
 using System;
 using System.IO;
 using dnlib.DotNet;

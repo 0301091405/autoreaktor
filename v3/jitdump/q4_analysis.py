@@ -1,3 +1,4 @@
+import os, sys
 # "module MethodDef: 1853" + dump token 0x06000003 exists but
 # byToken MISSES! Is RID 3 missing from the module? ridcheck.exe
 # FOUND rid 3 ('?'). Difference: ridcheck scanned nb2; nbilmerge
@@ -27,12 +28,12 @@ class Q4 {
                     Console.WriteLine("rid3 = " + t.FullName + "::" + mm.Name + " HasBody=" + mm.HasBody);
     }
 }'''
-open(r'C:\Users\alt\Desktop\decodehub-week1\tools\autoreaktor\v3\jitdump\q4.cs', 'w').write(code)
+open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'q4.cs'), 'w').write(code)
 import subprocess
-JIT = r'C:\Users\alt\Desktop\decodehub-week1\tools\autoreaktor\v3\jitdump'
+JIT = os.path.dirname(os.path.abspath(__file__))
 subprocess.run([r'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe', '/nologo',
                 '/r:dnlib.dll', '/out:q4.exe', 'q4.cs'], cwd=JIT, capture_output=True)
 r = subprocess.run([JIT + r'\q4.exe',
-                    r"C:\Users\alt\Desktop\decodehub-week1\tools\autoreaktor\v3\multi-target\real-targets\t4y\NET Reactor Unpack Me.exe"],
+                    sys.argv[1]],
                    capture_output=True, cwd=JIT)
 print((r.stdout or b'').decode('mbcs', 'replace'))

@@ -13,7 +13,7 @@ using dnlib.DotNet.Emit;
 
 class NbPatch {
     static int Main(string[] a) {
-        if (a.Length < 3) { Console.WriteLine("kullanim: nbpatch <in.exe> <dumpdir> <out.exe>"); return 1; }
+        if (a.Length < 3) { Console.WriteLine("usage: nbpatch <in.exe> <dumpdir> <out.exe>"); return 1; }
         byte[] pe = File.ReadAllBytes(a[0]);
         var mod = ModuleDefMD.Load(a[0]);
 

@@ -3,48 +3,6 @@ __pycache__/
 *.pyc
 bin/
 obj/
-obj_check*
-*.obj
-*.exe
-clrjit_dump*
-
-# third-party libraries are fetched by tools/setup.sh, never committed
-dnlib.dll
-**/dnlib.dll
-
-test_necrobit/
-test_orig_dump/
-test_reactor/
-test_tuts/
-
-# lab material: packed/rebuilt/dumped binaries, per-target scratch dirs,
-# third-party challenge binaries and their run logs - local only
-v3/multi-target/
-v3/test-nbdump/
-v3/test-rebuild/
-v3/test-blob/
-v3/test-orig-dump/
-v3/test-reactor/
-v3/test-tuts/
-v3/blob-analysis/
-v3/nbwalk/dump_*
-v3/nbwalk/walk*.txt
-v3/nagstrip/*.log
-v3/jitdump/out.txt
-v3/nbwalk/policyCreatorDic.txt
-v3/nbhook.py
 *.log
-v3/jitdump/out.txt
-v3/nbwalk/policyCreatorDic.txt
-v3/nbhook.py
-
-# internal strategy notes - never commit
-POSITIONING.md
-
-# dump artifacts
 *.dmp
 *.bin
-nbhost_dump.dmp
-# third-party tool binaries fetched by tools/setup.sh - never commit
-tools/*
-!tools/setup.sh

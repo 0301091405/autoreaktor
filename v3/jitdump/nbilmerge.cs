@@ -1,10 +1,10 @@
 // nbilmerge.cs v6 — token filter fixed: large rids
 // (MethodDesc chunk artefaktlari) atlanir ama modul icindeki
 // all tokens are tried; real problem: the byToken lookup misses 108's
-// hepsinde miss — cunku dump token'lari & 0xFFFFFF ile modulun
+// all miss: dump tokens are & 0xFFFFFF while the module's
 // rids may not line up. full scan first:
 // for every dump token: exists in module, else write without rid.
-// AYRICA CreateCilBody callnda exception mesajlarini yaz.
+// Also log the exception messages from the CreateCilBody calls.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -79,12 +79,12 @@ class NBIlMerge {
         // SEQ-matching (for x64 targets): dumps with synthetic tokens
         // (out of rid range) in nb2 with the bodyless methods in metadata
         // bind by encounter order. Weak proof — only
-        // rapor modunda kullan (NB_SEQ=1).
+        // use in report mode (NB_SEQ=1).
         bool seqMode = Environment.GetEnvironmentVariable("NB_SEQ") == "1";
         // NB_ILMATCH=1: sentetik tokenli dumplari bodyless methodlarla
         // match by IL signature (ilSize + first byte) similarity. ilSize
         // if unique it is a valid match; on collision the first
-        // aday alinir ve RAPORLANIR (proof zayfligi acik).
+        // candidate is taken and REPORTED (weakness of the proof is stated).
         bool ilMatch = Environment.GetEnvironmentVariable("NB_ILMATCH") == "1";
         int ilMatchUsed = 0;
         var bodyless = new List<MethodDef>();
@@ -94,7 +94,7 @@ class NBIlMerge {
                     if (!m2.HasBody) bodyless.Add(m2);
             Console.WriteLine("seq target havuz (bodyless method): " + bodyless.Count);
         }
-        // NB_STUBMAP: manually stub=dump eslemesi (proofli rota).
+        // NB_STUBMAP: manual stub=dump mapping (the proven route).
         // Format: NB_STUBMAP="m_0000.bin=methodAdi;m_0001.bin=methodAdi2"
         var stubMap = new System.Collections.Generic.Dictionary<string,string>();
         string smEnv = Environment.GetEnvironmentVariable("NB_STUBMAP");
@@ -173,7 +173,7 @@ class NBIlMerge {
                                     // matching runs in reverse: the dump's ilSize
                                     // cannot be predicted from module metadata. Therefore
                                     // ILMATCH is only an ilSize + call-count heuristic
-                                    // eslemesi yapabilir ve SONUC RAPORLANIR:
+                                    // match and the RESULT IS REPORTED:
                                     m = null; int bestScore = -1;
                                     // bodyless methodlarin param sayisi + statiklik
                                     // dump'tan bilinmiyor — en zayif bag: siradaki
@@ -262,7 +262,7 @@ class NBIlMerge {
                         }
                     }
                     // CreateCilBody's variables list may be empty:
-                    // local kullanan bodyde ldloc instr operand null
+                    // in a body using local, ldloc instr operand is null
                     // otherwise dnlib already resolved it; if null, the index
                     // cannot be derived from instr order — safe path:
                     // not from method signature + body size,
@@ -271,7 +271,7 @@ class NBIlMerge {
                         string mwv = Environment.GetEnvironmentVariable("NB_MAXWRITE");
                     if (mwv != null && restored >= int.Parse(mwv)) { skipped++; continue; }
                     int nLocals = CountLocalsFromCil(bodies[i]);
-                        if (nLocals < 1) nLocals = 1; // ldloc.0 en az 1 local gerektirir
+                        if (nLocals < 1) nLocals = 1; // ldloc.0 requires at least 1 local
                         for (int li = newBody.Variables.Count; li < nLocals; li++)
                             newBody.Variables.Add(new dnlib.DotNet.Emit.Local(mod.CorLibTypes.Object));
                         if (i < 3) Console.WriteLine("  [dbg] tok=0x" + toks[i].ToString("X8") +
@@ -288,7 +288,7 @@ class NBIlMerge {
                             else if (c == dnlib.DotNet.Emit.Code.Ldloc_S || c == dnlib.DotNet.Emit.Code.Ldloca_S ||
                                      c == dnlib.DotNet.Emit.Code.Stloc_S) {
                                 // .S form: operand resolved as ushort in dnlib;
-                                // null kaldiysa IL'den cikaramayiz — Variables son index:
+                                // if null remains we cannot emit from IL - last Variables index:
                                 idx2 = newBody.Variables.Count - 1;
                             } else idx2 = newBody.Variables.Count - 1;
                             if (idx2 >= 0 && idx2 < newBody.Variables.Count)

@@ -64,7 +64,7 @@ class NagStrip2 {
                 foreach (var k in keep) m.Body.Instructions.Add(k);
             }
         }
-        Console.WriteLine($"call kaldirildi: {removed}");
+        Console.WriteLine($"calls removed: {removed}");
 
         // 3) orphaned calls in cctors — all already end with ret
         mod.Write(args[1]);

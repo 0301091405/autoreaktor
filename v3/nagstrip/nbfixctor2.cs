@@ -108,7 +108,7 @@ class nbfixctor2 {
         // BUT the bodies of VM types (obfuscated names like AoIBWWl...)
         // may have null-operands that are a valid part of the VM blob — for those
         // leave untouched (InvalidProgramException lesson from t3). Only
-        // kullanici tiplerinde (non-obfuscated) nop'la. Ayirt etme:
+        // nop in user types (non-obfuscated). To distinguish:
         // a type name that breaks C# identifier rules = obfuscated.
         int nulledOps = 0;
         foreach (var t in mod.GetTypes()) {
@@ -134,7 +134,7 @@ class nbfixctor2 {
         }
         // if the write blows up: we cannot skip every remaining null-operand instruction.
         // may be a VM type + null operand + CALLED FROM a user type
-        // (call VM metodu). Bu statusda o call nop'lanmali — kullanici
+        // (a VM-method call). In this state that call must be nopped:
         // tarafinda. Ek pass: tum methodlarda null-operand'li InlineMethod
         // nop the calls BUT ONLY IF the type itself is not obfuscated
         // AND the instruction with a null operand is a call OR ldftn.
@@ -279,7 +279,7 @@ gcc.Body.Instructions.Clear();
         // do it (per-type, not per-module — check and init can share a type; in 7.5.9.1
         // 206-methodlu tipin doneini oldurmek init'i de olduruyor ve NRE
         // uretiyordu). Sadece stringi TASIYAN method + o metodu dogrudan
-        // cagiran linelar target alinir.
+        // calling lines become targets.
         int tamperKill = 0, tamperCallCut = 0;
         var tamperMethods = new System.Collections.Generic.List<MethodDef>();
         foreach (var t in mod.GetTypes()) {
@@ -308,7 +308,7 @@ gcc.Body.Instructions.Clear();
             m.Body.Instructions.Add(OpCodes.Ret.ToInstruction());
             m.Body.KeepOldMaxStack = true;
             tamperKill++;
-            // cagiran linelari nop'la (check void donuslu olsa bile
+            // nop the calling lines (even when the check returns void
             // some calls use their result — nop leaves the stack unbalanced
             // leaves it on the stack)
             foreach (var t in mod.GetTypes()) {
@@ -619,7 +619,7 @@ gcc.Body.Instructions.Clear();
         Console.WriteLine($"nag disabled: {nagKilled}");
 
         // v17: ZORLA-FORCE-RET — rcheck'in null-operand listesinin TAMAMI
-        // (18 method, t3b). hasNull kosulu KALDIRILDI: dnlib yazimi null
+        // (18 methods, t3b). hasNull condition REMOVED: dnlib write emits null
         // fills the operand with a token it generates itself, AFTER the write
         // hasNull is no longer catching these. The list is name-based.
         // EXCLUDED (recoverable via raw-body post-inject):
@@ -810,7 +810,7 @@ gcc.Body.Instructions.Clear();
         // cctor -> ret; m8DF -> ret. Safe because the ctor is fixed.
         // NecroBit runtime (VM792/gttro/null-call'lar) cctor'suz da
         // kendi init'ini Main icerisinde yapar — T1'de prooflandi.
-        // v15: init-kill KALDIRILDI — NecroBit hook kurulumu qp1d5IbOJ + cctor zincirinde;
+        // v15: init-kill REMOVED - NecroBit hook setup qp1d5IbOJ + cctorr zincirinde;
         // once severed, runtime body-replace no longer happens; the JIT sees invalid IL.
         Console.WriteLine($"second pass nop: {extraNulled}");
 

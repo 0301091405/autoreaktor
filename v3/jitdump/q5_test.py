@@ -1,3 +1,4 @@
+import os, sys
 # Tokens DO exist in the module (rid 3 = ?.?::?, bodyless). So
 # byToken is not a MISS — it should find it! Why does nbilmerge
 # always skip 108? Re-read the code: TryGetValue(toks[i], out m) —
@@ -48,14 +49,14 @@ class Q5 {
                 }
     }
 }'''
-open(r'C:\Users\alt\Desktop\decodehub-week1\tools\autoreaktor\v3\jitdump\q5.cs', 'w').write(code)
+open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'q5.cs'), 'w').write(code)
 import subprocess
-JIT = r'C:\Users\alt\Desktop\decodehub-week1\tools\autoreaktor\v3\jitdump'
+JIT = os.path.dirname(os.path.abspath(__file__))
 subprocess.run([r'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe', '/nologo',
                 '/r:dnlib.dll', '/out:q5.exe', 'q5.cs'], cwd=JIT, capture_output=True)
 r = subprocess.run([JIT + r'\q5.exe',
-                    r"C:\Users\alt\Desktop\decodehub-week1\tools\autoreaktor\v3\multi-target\real-targets\t4y\NET Reactor Unpack Me.exe",
-                    r"C:\Users\alt\Desktop\decodehub-week1\tools\autoreaktor\v3\multi-target\real-targets\t4y\jitdump\m_06000003.bin"],
+                    sys.argv[1],
+                    sys.argv[2]],
                    capture_output=True, cwd=JIT)
 print((r.stdout or b'').decode('mbcs', 'replace'))
 print((r.stderr or b'').decode('mbcs', 'replace')[-300:])
