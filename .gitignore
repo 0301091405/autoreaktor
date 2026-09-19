@@ -6,6 +6,7 @@ obj/
 obj_check*
 *.obj
 *.exe
+clrjit_dump*
 
 # third-party libraries are fetched by tools/setup.sh, never committed
 dnlib.dll

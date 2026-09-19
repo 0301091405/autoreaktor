@@ -10,9 +10,9 @@ against the original's GUI behavior.
 
 | Layer | Tool | What it does | Verified result |
 |---|---|---|---|
-| Research | `v3/RESEARCH-necrobit.md` | Full NecroBit 7.3 mechanism, measured on-target | 201/201 inventory, JIT-hook dead-ends documented with evidence |
-| Harvest | `v3/nbdump.py` | Reflection harvest: policyCreatorDic + delegate-chain DynamicMethod IL | 204 fragments, 201/201 cross-match, rc=0 |
-| Rebuild | `v3/nbrebuild/` | dnlib patcher: inline delegate fragments, sanitize dead dummies, write | 1,438 call-sites substituted in 187 methods, 0 unresolved, **0 NecroBit pairs remain** |
+| Research | `v3/RESEARCH-necrobit.md` | Full NecroBit 7.3 mechanism, measured on-target | 226/226 inventory on the June 2025 challenge target, JIT-hook dead-ends documented with evidence |
+| Harvest | `v3/nbdump.py` | Reflection harvest: policyCreatorDic + delegate-chain DynamicMethod IL | harvested fragments 100% cross-matched, rc=0 |
+| Rebuild | `v3/nbrebuild/` | dnlib patcher: inline delegate fragments, sanitize dead dummies, write | 1,502 call-sites substituted in 192 methods, 0 unresolved, **0 NecroBit pairs remain** |
 | Proof | `v3/test-rebuild/` | Live GUI equivalence harness | Rebuilt binary opens the identical `reactor73` GUI; register-click behavior byte-identical (`error` box on empty fields, same as original) |
 
 ## The three bugs between "writes a binary" and "runs a binary"
@@ -67,15 +67,15 @@ Tuts4You ".NET Reactor v7.3" unpackme (whoknows, June 2025).
 |---|---|
 | `v3/RESEARCH-necrobit.md` | NecroBit 7.3 internal mechanism, evidence-backed |
 | `v3/nbdump.py` | Reflection harvester (policyCreatorDic + fragment IL) |
-| `v3/nbdump-walk/` | nbwalk helper (module-ctor forcing + delegate enumeration) |
+| `v3/nbwalk/` | reflection walker (module-ctor forcing + delegate enumeration) |
 | `v3/nbrebuild/` | dnlib patcher with token-preserving write + sig-matched overload resolution |
-| `v3/test-rebuild/` | verification harness tools (IL dump, subst audit, injectors) |
+| `v3/nagstrip/` | nag/tamper/ctor repair tools used by the rebuild chain |
 
 AutoReaktor: MIT. v3 tools: MIT.
 
 ## Multi-target T-strip (t1–t7) - layer-combination proof
 
-`multi-target/T-MATRIX.md` - same-source samples packed with every .NET Reactor 7.5
+The v3 lab strip (t1-t7, same-source samples packed with every .NET Reactor 7.5
 layer combination (NecroBit / +VM / +cflow / +antidebug+antiildasm+merge /
 +compression+Reflection-Compat), plus the real-world strip (t6/t7).
 **All five solved with live GUI proof** - the t3 11-stage chain (nbfixctor2 v30→v41e)
