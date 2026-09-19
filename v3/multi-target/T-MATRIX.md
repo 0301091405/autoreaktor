@@ -67,3 +67,13 @@ both the packed original and the fully restored output (t3b-final21.exe).
 The restore chain removes the VM entry delegates while leaving the GUI
 intact, so a Krypton capture pass after the restore step finds nothing
 left to virtualize: the VM surface is closed, not merely bypassed.
+
+Follow-up on the R9 reference target (real-targets/c10_v73): a second
+nbrebuild pass over the restored binary with the original inventory
+substitutes 0 call-sites (0 NO-FRAG / 0 UNRESOLVED), because pass 1
+already consumed every ldsfld+invoke-helper pair (1,502 in 192 methods,
+log verified). A Krypton capture on the restored binary still lists
+delegate DynamicMethods (226 app-namespace entries) - those are
+runtime-cached delegate objects created during module init, not
+un-restored call sites. Conclusion: the restored binary needs no second
+pass; the delegate cache is dead weight, not a live VM surface.
