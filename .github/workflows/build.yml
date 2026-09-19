@@ -39,6 +39,10 @@ jobs:
         shell: bash
         run: |
           set -e
-          for f in autoreaktor.py hunt.py hunt_list.py vmres_extract.py                    v3/nbdump.py v3/nbdumphost.py v3/nbfix.py                    v3/jitdump/nbjitdump.py v3/jitdump/jitdrive.py                    v3/jitdump/auto_stubmap.py v3/jitdump/build_hook.py                    v3/jitdump/merge_prep.py; do
+          for f in autoreaktor.py hunt.py hunt_list.py vmres_extract.py \
+                   v3/nbdump.py v3/nbdumphost.py \
+                   v3/jitdump/nbjitdump.py v3/jitdump/jitdrive.py \
+                   v3/jitdump/auto_stubmap.py v3/jitdump/build_hook.py \
+                   v3/jitdump/merge_prep.py; do
             python -m py_compile "$f"
           done
