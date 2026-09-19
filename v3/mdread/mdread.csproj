@@ -6,6 +6,8 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="*.cs" />
+    <Compile Include="mdread.cs" />
     <PackageReference Include="dnlib" Version="3.3.4" />
   </ItemGroup>
 </Project>
