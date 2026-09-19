@@ -10,8 +10,6 @@
   <ItemGroup>
     <Compile Remove="*.cs" />
     <Compile Include="nbfixctor2.cs" />
-    <Reference Include="dnlib">
-      <HintPath>..\..\dnlib.dll</HintPath>
-    </Reference>
+    <PackageReference Include="dnlib" Version="3.3.4" />
   </ItemGroup>
 </Project>
