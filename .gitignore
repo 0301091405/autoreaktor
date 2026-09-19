@@ -29,7 +29,13 @@ v3/blob-analysis/
 v3/nbwalk/dump_*
 v3/nbwalk/walk*.txt
 v3/nagstrip/*.log
+v3/jitdump/out.txt
+v3/nbwalk/policyCreatorDic.txt
+v3/nbhook.py
 *.log
+v3/jitdump/out.txt
+v3/nbwalk/policyCreatorDic.txt
+v3/nbhook.py
 
 # internal strategy notes - never commit
 POSITIONING.md
