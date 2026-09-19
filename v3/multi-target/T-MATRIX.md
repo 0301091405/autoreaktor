@@ -77,3 +77,21 @@ delegate DynamicMethods (226 app-namespace entries) - those are
 runtime-cached delegate objects created during module init, not
 un-restored call sites. Conclusion: the restored binary needs no second
 pass; the delegate cache is dead weight, not a live VM surface.
+
+## Pipeline-only run on the 7.5 all-flags target (t-max)
+
+The nbdump/nbrebuild contract was exercised standalone on the heaviest
+available build (Reactor 7.5 DEMO, all 14 Quick Settings enabled):
+
+- nbdump harvest: 143/143 NecroBit methods matched (100.0% coverage)
+- nbrebuild: 48 call-sites substituted in 5 methods, 188 dead dummies
+  nopped, 0 unresolved
+- launch: the rebuilt binary throws at startup (0xE0434352, exception
+  printer itself fails to render - broken type load)
+
+Conclusion: the harvest and substitution contracts hold on 7.5, but the
+plain pipeline is necessary-not-sufficient on all-flags builds. The t-max
+row (behavior parity via nbfixctor2 v54 hand control-tree ctor) remains
+the required route there: the v54 output launches and stays alive (T+6s
+verified), while the pipeline-only rebuild hits the same decoy-ctor trap
+this matrix documented for plain restore attempts.
