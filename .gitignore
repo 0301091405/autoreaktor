@@ -24,3 +24,4 @@ v3/jitdump/dnlib.dll
 dnlib.dll
 v3/jitdump/*.obj
 tools/de4dot/
+verify_target/out48/
