@@ -208,6 +208,8 @@ def necrobit_tools() -> dict:
         "auto_stubmap": jd / "auto_stubmap.py",
         "merge_csproj": jd / "nbilmerge.csproj",
         "merge_exe": jd / "bin" / "Release" / "nbilmerge.exe",
+        "ccfix_csproj": ROOT / "v3" / "ccfix" / "ccfix.csproj",
+        "ccfix_exe": ROOT / "v3" / "ccfix" / "bin" / "Release" / "ccfix.exe",
     }
 
 
@@ -414,6 +416,10 @@ def main():
                                               "-c", "Release", "-v", "q", "--nologo"],
                                              cwd=nb_tools["dir"], timeout=600)
                     nb["merge_build_rc"] = rc
+                if not nb_tools["ccfix_exe"].exists():
+                    run_stage(["dotnet", "build", str(nb_tools["ccfix_csproj"]),
+                               "-c", "Release", "-v", "q", "--nologo"],
+                              cwd=nb_tools["ccfix_csproj"].parent, timeout=600)
                 if not nb_tools["merge_exe"].exists():
                     nb["status"] = "skipped"
                     nb["reason"] = "nbilmerge.exe build failed"
@@ -495,6 +501,66 @@ def main():
         elif args.deep:
             entry["stages"].append({"stage": "necrobit-jitdump", "status": "skipped",
                                     "reason": "target not suspected (no Reactor marker and slayer output ran)"})
+
+        # ---- stage 5: runnable recovery (feedback loop) --------------------
+        # The Slayer output usually carries DECRYPTED strings but still faults
+        # in its module cctor: Reactor's antitamper writes through
+        # Marshal.* into the (rewritten) image. The failure surfaces one
+        # method at a time, so the fix is feedback-driven: run, parse the
+        # top frame from the stack trace, nop every cctor call to it, repeat.
+        # Success = the program exits without an unhandled exception.
+        if args.deep and slayer_out and nb_tools["ccfix_exe"].exists():
+            src5 = Path(entry["slayer_output"])
+            work5 = work / "runfix"
+            work5.mkdir(exist_ok=True)
+            cur = work5 / src5.name
+            shutil.copy2(src5, cur)
+            iters = []
+            gen = 0
+            rc5 = None
+            out5 = ""
+            for it in range(6):
+                entry["probe_executed"] = True
+                rc5, out5, _ = run_stage([str(cur), "dump"], cwd=work5,
+                                         timeout=60, probe=False)
+                if "Unhandled Exception" not in out5:
+                    break
+                meth = None
+                for l in out5.splitlines():
+                    l = l.strip()
+                    if not l.startswith("at "):
+                        continue
+                    full = l[3:].split("(")[0].strip()
+                    # skip BCL frames — the culprit is always the protected
+                    # module's own method
+                    if full.startswith("System.") or full.startswith("Microsoft."):
+                        continue
+                    meth = full.split(".")[-1].strip()
+                    break
+                if not meth:
+                    break
+                gen += 1
+                nxt = work5 / (src5.stem + f"_r{gen}" + src5.suffix)
+                rc, outc, _ = run_stage([str(nb_tools["ccfix_exe"]), "fix",
+                                         str(cur), str(nxt), meth],
+                                        cwd=work5, timeout=300)
+                iters.append({"method": meth, "rc": rc,
+                              "log_tail": outc[-200:]})
+                if rc != 0:
+                    break
+                cur = nxt
+            else:
+                pass
+            runnable = rc5 is not None and "Unhandled Exception" not in out5
+            stage5 = {"stage": "runnable-recovery", "iterations": iters,
+                      "final_rc": rc5, "runnable": bool(runnable),
+                      "output_tail": out5[-400:]}
+            if runnable:
+                entry["runnable_output"] = str(cur)
+                entry["sha256_runnable_output"] = sha256(cur)
+                if entry["result"] in ("incomplete", "slayer-clean", "necrobit-recovered"):
+                    entry["result"] = "run-recovered"
+            entry["stages"].append(stage5)
 
         if not args.keep_work:
             shutil.rmtree(work, ignore_errors=True)
