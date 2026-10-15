@@ -23,6 +23,14 @@ using System.Runtime.CompilerServices;
 
 static class ForceDump
 {
+    static void Put(byte[] buf, int off, uint v)
+    {
+        buf[off] = (byte)v;
+        buf[off + 1] = (byte)(v >> 8);
+        buf[off + 2] = (byte)(v >> 16);
+        buf[off + 3] = (byte)(v >> 24);
+    }
+
     static int Main(string[] args)
     {
         if (args.Length < 1)
@@ -87,7 +95,7 @@ static class ForceDump
             }
         }
 
-        int prepared = 0, failed = 0, skipped = 0;
+        int prepared = 0, failed = 0, skipped = 0, ehWritten = 0;
         foreach (Type t in types)
         {
             if (t == null) { skipped++; continue; }
@@ -107,9 +115,59 @@ static class ForceDump
             {
                 try
                 {
-                    if (m.GetMethodBody() == null) { skipped++; continue; }   // abstract/extern/pinvoke
+                    var body = m.GetMethodBody();
+                    if (body == null) { skipped++; continue; }   // abstract/extern/pinvoke
                     RuntimeHelpers.PrepareMethod(m.MethodHandle);
                     prepared++;
+                    // Exception clauses ride along, read from the SAME decoded
+                    // body the JIT just consumed (PrepareMethod cached it).
+                    // Written in the hook's .eh format so nbilmerge attaches
+                    // them without any extra wiring: [u32 count][count x
+                    // 28B: flags, tryOff, tryLen, hOff, hLen, classTok,
+                    // filterOff]. Managed option enums map 1:1 except Fault
+                    // (4 managed -> 3 CORINFO).
+                    var clauses = body.ExceptionHandlingClauses;
+                    if (clauses.Count > 0)
+                    {
+                        string dir = Environment.GetEnvironmentVariable("JITDUMP_DIR");
+                        if (!string.IsNullOrEmpty(dir))
+                        {
+                            try
+                            {
+                                var buf = new byte[4 + clauses.Count * 28];
+                                Put(buf, 0, (uint)clauses.Count);
+                                for (int ci = 0; ci < clauses.Count; ci++)
+                                {
+                                    var c = clauses[ci];
+                                    int o = 4 + ci * 28;
+                                    uint flags =
+                                        c.Flags == ExceptionHandlingClauseOptions.Finally ? 2u :
+                                        c.Flags == ExceptionHandlingClauseOptions.Filter ? 1u :
+                                        c.Flags == ExceptionHandlingClauseOptions.Fault ? 3u : 0u;
+                                    Put(buf, o, flags);
+                                    Put(buf, o + 4, (uint)c.TryOffset);
+                                    Put(buf, o + 8, (uint)c.TryLength);
+                                    Put(buf, o + 12, (uint)c.HandlerOffset);
+                                    Put(buf, o + 16, (uint)c.HandlerLength);
+                                    uint tok20 = 0;
+                                    if (c.Flags == ExceptionHandlingClauseOptions.Filter)
+                                        tok20 = (uint)c.FilterOffset;
+                                    else if (c.Flags == ExceptionHandlingClauseOptions.Clause &&
+                                             c.CatchType != null)
+                                        tok20 = (uint)c.CatchType.MetadataToken;
+                                    Put(buf, o + 20, tok20);
+                                    Put(buf, o + 24, 0);
+                                }
+                                string ehPath = Path.Combine(dir,
+                                    "m_" + m.MetadataToken.ToString("X8") + ".eh");
+                                File.WriteAllBytes(ehPath, buf);
+                                ehWritten++;
+                                Console.WriteLine("[fd] eh: " + Path.GetFileName(ehPath) +
+                                                  " clauses=" + clauses.Count);
+                            }
+                            catch (Exception we) { Console.WriteLine("[dbg] eh write failed: " + we.Message); }
+                        }
+                    }
                 }
                 catch
                 {
@@ -124,7 +182,8 @@ static class ForceDump
         }
 
         Console.WriteLine("[fd] done: prepared=" + prepared +
-                          " failed=" + failed + " skipped=" + skipped);
+                          " failed=" + failed + " skipped=" + skipped +
+                          " eh=" + ehWritten);
         return 0;
     }
 }

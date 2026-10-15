@@ -80,6 +80,14 @@ def main():
     if not scope_dirs:
         scope_dirs = [dumpdir]   # legacy flat dump
 
+    # clause tables written by the forcedump companion land at the dump root;
+    # each trial dir needs the ones matching its own bodies
+    for eh in glob.glob(os.path.join(dumpdir, 'm_*.eh')):
+        for d in scope_dirs:
+            dst = os.path.join(d, os.path.basename(eh))
+            if not os.path.exists(dst):
+                shutil.copyfile(eh, dst)
+
     if len(scope_dirs) == 1:
         restored, rc = _trial_merge(target, scope_dirs[0], out)
         return 0 if (os.path.exists(out) and restored > 0) else (rc or 1)

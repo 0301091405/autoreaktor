@@ -15,9 +15,27 @@ class Program
             Console.WriteLine(SECRET_1);
             Console.WriteLine(SECRET_2);
         }
-        // small logic so the assembly has real IL beyond strings
+        // small logic so the assembly has real IL beyond strings;
+        // try/catch/finally gives the dump chain exception clauses to capture
+        return SafeAcc() == 135 ? 0 : 1;
+    }
+
+    static int SafeAcc()
+    {
         int acc = 0;
-        for (int i = 0; i < 10; i++) acc += i * 3;
-        return acc == 135 ? 0 : 1;
+        try
+        {
+            for (int i = 0; i < 10; i++) acc += i * 3;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("unexpected: " + ex.Message);
+            return -1;
+        }
+        finally
+        {
+            acc += 0;
+        }
+        return acc;
     }
 }

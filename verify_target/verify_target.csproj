@@ -1,10 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net8.0;net48</TargetFrameworks>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>verify_target</AssemblyName>
     <RootNamespace>verify_target</RootNamespace>
+  </PropertyGroup>
+
+  <!-- the primary Reactor class is Framework x86: publish the net48 leg as
+       a 32-bit process so the dump chain exercises the x86 hook path -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PlatformTarget>x86</PlatformTarget>
   </PropertyGroup>
 </Project>
