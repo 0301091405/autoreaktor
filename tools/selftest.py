@@ -49,13 +49,18 @@ def main():
     fails = []
     partial = False
 
-    # 1. build the test target
+    # 1. build the test target (both runtime legs)
     out = ROOT / "verify_target" / "out"
+    out48 = ROOT / "verify_target" / "out48"
     rc, log = sh(["dotnet", "publish", "verify_target/verify_target.csproj",
-                  "-c", "Release", "-o", out], ROOT)
+                  "-c", "Release", "-f", "net8.0", "-o", out], ROOT)
     if rc != 0 or not (out / "verify_target.dll").exists():
-        fails.append(f"target publish failed rc={rc}")
-    print(f"[1] publish: rc={rc}")
+        fails.append(f"net8 publish failed rc={rc}")
+    rc, log = sh(["dotnet", "publish", "verify_target/verify_target.csproj",
+                  "-c", "Release", "-f", "net48", "-o", out48], ROOT)
+    if rc != 0 or not (out48 / "verify_target.exe").exists():
+        fails.append(f"net48 publish failed rc={rc}")
+    print(f"[1] publish net8+net48: {'ok' if not fails else 'FAIL'}")
 
     # 2. build the merger (selftest must not depend on another CI job)
     rc, log = sh(["dotnet", "build", JD / "nbilmerge.csproj", "-c", "Release"], JD)
@@ -97,6 +102,21 @@ def main():
                       out / "verify_target.dll", dumpdir, merged], ROOT)
     else:
         partial = True
+
+    # 4b. the Framework x86 leg — the primary Reactor class
+    if dlls_ok:
+        dump48 = merged.parent / "dump48"
+        rc, log = sh([sys.executable, JD / "nbjitdump.py",
+                      out48 / "verify_target.exe", "--out", dump48,
+                      "--force", "--wait", "90"], ROOT)
+        marker48 = dump48 / "marker.txt"
+        hooked48 = "HOOK-OK" in marker48.read_text(errors="replace") if marker48.exists() else False
+        bodies48 = len(list(dump48.glob("scope*/m_*.bin")))
+        eh48 = len(list(dump48.glob("m_*.eh"))) + len(list(dump48.glob("scope*/m_*.eh")))
+        if hooked48 and not (bodies48 >= 2 and eh48 >= 1):
+            fails.append(f"net48 x86 leg regressed: bodies={bodies48} eh={eh48}")
+        print(f"[4b] net48 x86: hook={'OK' if hooked48 else 'BLOCKED'} "
+              f"bodies={bodies48} eh={eh48}")
 
     # 5. merge must always produce output (real dump when the hook ran)
     if full:
