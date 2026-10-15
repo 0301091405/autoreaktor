@@ -13,7 +13,7 @@ unset = feature off / default path.
 | `NB_SCOPE_DIRS` | off | `1` (set by `nbjitdump.py`) = bodies are grouped into `scope<N>/` subdirectories, one per owning CLR module. The merge consumes only the target's dir, so framework/companion JIT can never collide on MethodDef rids. |
 | `NB_TOKENMODE` | auto | `vt` = resolve the real MethodDef token through the `getMethodDefFromMethod` vtable slot; otherwise chunk-derived offset read (x86: `+0x0C`, x64: `+0x14`). |
 | `NB_VTSLOT` | `112` | Vtable slot used when `NB_TOKENMODE=vt`. Runtime-dependent — see "slot discovery" below. |
-| `NB_EHSLOT` | off | Vtable slot of `ICorJitInfo::getEHinfo`. When set, the hook captures every method's exception clauses during the original compile and writes `m_XXXXXXXX.eh` next to the body (`[u32 count][count x 28-byte clause]`). `nbilmerge` reattaches them on write-back. |
+| `.eh` files | — | Exception clauses come from the forcedump companion: after `PrepareMethod` it reads `MethodBody.ExceptionHandlingClauses` (the SAME decoded body the JIT consumed) and writes `m_XXXXXXXX.eh` (`[u32 count][count x 28-byte clause]`). No vtable slot involved. The hook additionally snapshots the body's trailing EH section when the runtime keeps it contiguous with the IL (header dword 4 = extra length). `nbilmerge` reattaches handlers from either source. |
 | `NB_STRSLOT` | `118` | Vtable slot of `getStringLiteral` (CoreCLR .NET 8 count; Framework differs). Only read when `NB_STRDUMP=1`. |
 | `NB_STRDUMP` | off | `1` = dump ldstr literal contents to `us_XXXXXX.txt` while bodies compile. SEH-guarded, but a wrong slot can destabilize some hosts — default off. |
 | `NB_NOINLINE` | off | `1` = `nbjitdump.py` exports `COMPlus_JitNoInline=1` so tiny methods JIT as separate entries instead of being inlined into ctors. |
@@ -27,9 +27,11 @@ grouping achieves the same isolation with pointer bookkeeping only.
 Slot indices shift between CLR builds. Recipe used on the reference targets:
 in dnSpy, load `clrjit.dll`/the runtime, find `ICorJitInfo`'s interface map in
 `corinfo.h` for the matching CoreCLR/Framework tag and count to the method —
-or brute-force a slot range in a throwaway process (`NB_VTSLOT`/
-`NB_STRSLOT`/`NB_EHSLOT` accept any number; wrong slots are SEH-guarded and
-simply produce no data). Confirmed working values are recorded per target in
+or probe a slot range in a throwaway process (`NB_VTSLOT`/`NB_STRSLOT` accept
+any number; wrong slots are SEH-guarded and simply produce no data). Do NOT
+probe slots for getEHinfo: a wrong-slot hook breaks live JIT compilation
+(return-value clobber). EH clauses use the managed route above instead.
+Confirmed working values are recorded per target in
 `v3/multi-target/T-MATRIX.md`.
 
 ## nbjitdump.py / build_hook.py

@@ -74,10 +74,10 @@ If your own target needs NecroBit body recovery instead, stage 4 handles it in t
 
 Static strippers fail on modern NecroBit because the CIL bodies never exist decrypted on disk: `MethodDef.RVA` points at a decoy stub, and the real body is only assembled in memory at JIT time. The route that does not race the packer:
 
-1. `v3/jitdump/clrjit_hook.cpp` — VMT hook on `ICorJitCompiler::compileMethod`, injected at process start. With `NB_EHSLOT` set it also hooks the `getEHinfo` vtable slot and captures each method's exception clauses (`m_*.eh`). With `NB_SCOPE_DIRS=1` bodies are grouped per owning CLR module, so foreign JIT never mixes into the target's dump.
+1. `v3/jitdump/clrjit_hook.cpp` — VMT hook on `ICorJitCompiler::compileMethod`, injected at process start. With `NB_SCOPE_DIRS=1` bodies are grouped per owning CLR module, so foreign JIT never mixes into the target's dump.
 2. `v3/jitdump/nbjit_launch.c` — suspended `CreateProcess` + `QueueUserAPC(LoadLibraryA)` launcher (built per-target bitness).
 3. `v3/jitdump/nbjitdump.py` — orchestrator: detects the target's machine type, builds the matching launcher (MSVC discovered via `v3/jitdump/msvc_env.py` — no hardcoded versions), runs it, collects the bodies. `--force` runs the companion below instead of a bare run.
-4. `v3/forcedump/` — force-JIT companion: loaded into the hooked process, it runs the module initializers (anti-tamper init completes clean), then `RuntimeHelpers.PrepareMethod`-walks every resolvable MethodDef. The dump stops depending on what the target happens to execute — one pass covers everything the runtime can JIT.
+4. `v3/forcedump/` — force-JIT companion: loaded into the hooked process, it runs the module initializers (anti-tamper init completes clean), then `RuntimeHelpers.PrepareMethod`-walks every resolvable MethodDef. The dump stops depending on what the target happens to execute — one pass covers everything the runtime can JIT. Exception clauses are read from the same decoded body and written as `m_*.eh` next to the dump.
 5. `v3/jitdump/nbilmerge.cs` — write-back: merges dumped bodies into a module dnSpy/ILSpy can open, reattaches the captured EH clauses and binds every local instruction to its true index from a raw-IL scan. `auto_stubmap.py` trial-merges each scope dir and keeps the strongest write count.
 
 There is no key-derivation emulation, no per-version offset tables — the pipeline takes the bodies at the moment the runtime itself hands them to the JIT, so it is structurally immune to Reactor version bumps that break static decrypters.
