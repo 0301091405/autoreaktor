@@ -105,6 +105,32 @@ Documented in the READMEs, measured on real targets, no inflation:
 - **Ordering on all-flags 7.5 builds**: running `nbrebuild` directly on the packed file can produce a module that throws `BadImageFormatException` at load. Run the `nbfixctor2` ctor repair first (`NB_V50=1`), then `nbrebuild`; the combined output launches clean (verified T+8s with GUI on the all-flags target in `v3/multi-target/T-MATRIX.md`).
 - **Runtime slot hooks** (`NB_EHSLOT`, `NB_STRSLOT`, `NB_VTSLOT`) are vtable-slot indices that vary across CLR builds — they default to safe/off values and every one is documented with its discovery recipe in `docs/ENV-VARS.md`.
 
+## The universality matrix
+
+One sample proves nothing. `tools/matrix.py` generates a diverse corpus
+(runtimes x architectures x app shapes x flag combos), protects every target
+with the free demo console, runs the full chain on each and writes the result
+matrix — the project's universality claim, reproducible by anyone:
+
+```
+python tools/matrix.py            # full grid
+python tools/matrix.py --quick    # one flag-set per shape
+```
+
+Requires Windows, the .NET SDK and the .NET Reactor demo console
+(auto-discovered; or point `REACTOR_CONSOLE` at it). Cells report the honest
+result class per sample — `run-recovered`, `necrobit-recovered`,
+`slayer-clean`, ... — so regressions and open classes are visible, never
+hidden. First published grid (7.5.0.0 demo, all cells full flags):
+
+| cell | result | restored | runnable |
+|---|---|---|---|
+| console net48 x86 | run-recovered | 220 | yes |
+| console net48 x64 | slayer-clean | — | no |
+| console net8 (anycpu) | slayer-clean | 230 | no |
+| console + generics/delegates net48 x86 | run-recovered | 221 | yes |
+| WinForms net48 x86 | slayer-clean | 225 | no |
+
 ## Machinery self-test
 
 The unpacking machinery is CI-enforced with zero protected inputs — no license, no sample, no trust required:

@@ -448,16 +448,37 @@ def main():
                         outdir = work / "nbmerge"
                         outdir.mkdir(exist_ok=True)
                         outexe = outdir / (src.stem + "_nbmerged" + src.suffix)
-                        rc2, out2, dur2 = run_stage([sys.executable, str(nb_tools["auto_stubmap"]),
-                                                     str(base), str(ddir), str(outexe)],
-                                                    cwd=work, timeout=900)
-                        m = re.search(r"method actually written:\s*(\d+)", out2)
-                        mrestored = int(m.group(1)) if m else None
+                        # dual-base trial: bodies merge into the original AND
+                        # (when it exists) into the Slayer output — the write
+                        # count picks the base, so no target class is assumed
+                        # (the slayer base carries decrypted strings; the
+                        # original keeps pristine metadata)
+                        bases = [("original", base)]
+                        if entry.get("slayer_output"):
+                            bases.append(("slayer", Path(entry["slayer_output"])))
+                        best = None
+                        trial_logs = []
+                        for bname, bpath in bases:
+                            tout = outdir / (src.stem + "_nb_" + bname + src.suffix)
+                            rc2, out2, dur2 = run_stage([sys.executable, str(nb_tools["auto_stubmap"]),
+                                                         str(bpath), str(ddir), str(tout)],
+                                                        cwd=work, timeout=900)
+                            m = re.search(r"method actually written:\s*(\d+)", out2)
+                            mres = int(m.group(1)) if m else -1
+                            trial_logs.append({"base": bname, "rc": rc2, "restored": mres,
+                                               "written": tout.exists()})
+                            if tout.exists() and (best is None or mres > best[0]):
+                                best = (mres, bname, tout, rc2, out2, dur2)
+                        if best is None:
+                            best = (-1, bases[0][0], None, 1, "no merge output", 0)
+                        mrestored, base_used, outexe, rc2, out2, dur2 = best
                         mm = re.search(r"modul MethodDef:\s*(\d+)", out2)
                         module_methods = int(mm.group(1)) if mm else None
                         entry["stages"].append({"stage": "necrobit-merge", "rc": rc2,
                                                 "restored": mrestored,
                                                 "module_methods": module_methods,
+                                                "merge_base": base_used,
+                                                "trials": trial_logs,
                                                 "secs": round(dur2, 1),
                                                 "log_tail": out2[-600:]})
                         if outexe.exists():
@@ -510,7 +531,15 @@ def main():
         # top frame from the stack trace, nop every cctor call to it, repeat.
         # Success = the program exits without an unhandled exception.
         if args.deep and slayer_out and nb_tools["ccfix_exe"].exists():
-            src5 = Path(entry["slayer_output"])
+            # hybrid-aware input: when the winning merge base was the slayer
+            # module, the merged PE already carries the real bodies AND the
+            # decrypted strings — start the loop from there
+            mb = next((st.get("merge_base") for st in entry["stages"]
+                       if st.get("stage") == "necrobit-merge"), None)
+            if mb == "slayer" and entry.get("necrobit_output"):
+                src5 = Path(entry["necrobit_output"])
+            else:
+                src5 = Path(entry["slayer_output"])
             work5 = work / "runfix"
             work5.mkdir(exist_ok=True)
             cur = work5 / src5.name
@@ -521,7 +550,7 @@ def main():
             out5 = ""
             for it in range(6):
                 entry["probe_executed"] = True
-                rc5, out5, _ = run_stage([str(cur), "dump"], cwd=work5,
+                rc5, out5, _ = run_stage([str(cur)], cwd=work5,
                                          timeout=60, probe=False)
                 if "Unhandled Exception" not in out5:
                     break
