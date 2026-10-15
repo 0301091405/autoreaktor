@@ -55,11 +55,19 @@ dotNET_Reactor.Console.exe -file verify_target\out48\verify_target.exe ^
 python autoreaktor.py verify_target_Secure --deep
 
 # 4. inspect the per-stage report — stage 4 shows hook status, dumped bodies,
-#    EH tables and the merge restore count; the recovered analysis PE lands
-#    in _ar_out/work/<name>/nbmerge/
+#    EH tables and the merge restore count; stage 5 runs a feedback loop that
+#    strips the leftover antitamper writer from the Slayer output
 ```
 
-Verified end-to-end on a fresh 7.5.0.0 demo target: hunt `protected` → de4dot → Slayer → Krypton → 267 decrypted bodies dumped → 220/411 methods restored into the analysis PE by real tokens → 9 EH clause tables captured. See T-MATRIX row T8.
+Verified end-to-end on a fresh 7.5.0.0 demo target (T-MATRIX row T8): hunt `protected` → 267 decrypted bodies dumped → 220/411 methods restored into the analysis PE by real tokens → 9 EH clause tables → stage 5 produced a **running** assembly that prints the two secrets the packer encrypted:
+
+```
+hello from test target
+DH-VERIFY-PLAINTEXT-MARKER-7F3A
+DH-VERIFY-SECRET-<hex>
+```
+
+Per-file results, reported honestly in `report.json`: `run-recovered` (running rebuilt binary), `necrobit-recovered` / `necrobit-partial` / `necrobit-dumped` (analysis PE tiers), `slayer-clean`, `krypton-devirt`, `incomplete`.
 
 If your own target needs NecroBit body recovery instead, stage 4 handles it in the chain — or see `v3/README.md` for the manual deep-dive route.
 
