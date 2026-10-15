@@ -25,3 +25,5 @@ dnlib.dll
 v3/jitdump/*.obj
 tools/de4dot/
 verify_target/out48/
+v3/ccfix/bin/
+v3/ccfix/obj/
