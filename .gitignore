@@ -6,3 +6,21 @@ obj/
 *.log
 *.dmp
 *.bin
+
+# third-party dependencies fetched by tools/setup.sh (never committed)
+tools/*.zip
+tools/*.exe
+tools/dnlib.dll
+tools/slayer/
+tools/krypton/
+verify_target/out/
+_ar_out/
+v3/jitdump/clrjit_dump*.dll
+v3/jitdump/clrjit_dump*.exp
+v3/jitdump/clrjit_dump*.lib
+v3/jitdump/nbjit_launch.exe
+v3/jitdump/nbjit_launch.obj
+v3/jitdump/dnlib.dll
+dnlib.dll
+v3/jitdump/*.obj
+tools/de4dot/
