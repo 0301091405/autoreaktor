@@ -257,7 +257,7 @@ class NBIlMerge {
                                     // cannot be predicted from module metadata. Therefore
                                     // ILMATCH is only an ilSize + call-count heuristic
                                     // match and the RESULT IS REPORTED:
-                                    m = null; int bestScore = -1;
+                                    m = null;
                                     // bodyless methodlarin param sayisi + statiklik
                                     // dump'tan bilinmiyor — en zayif bag: siradaki
                                     // uygun bodyless metodu al ama ETIKETLE:
