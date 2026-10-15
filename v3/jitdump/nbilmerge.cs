@@ -276,6 +276,20 @@ class NBIlMerge {
                                     continue;
                                 }
             }
+            // delegate-declaring methods must stay runtime-implemented —
+            // writing an IL body onto them is illegal and the JIT rejects
+            // the whole type ("runtime implemented delegate method")
+            if (m != null && m.DeclaringType?.BaseType?.FullName != null)
+            {
+                var bfn = m.DeclaringType.BaseType.FullName;
+                if (bfn.Contains("System.Delegate") || bfn.Contains("System.MulticastDelegate"))
+                { skipped++; continue; }
+            }
+            // generic types load-validate every member; a body written with
+            // Object-only locals can fail that check — leave generics to the
+            // reflection-equivalence pass until locals carry real types
+            if (m != null && m.DeclaringType != null && m.DeclaringType.HasGenericParameters)
+            { skipped++; continue; }
             try {
                 // CreateCilBody METHOD BODY HEADER'li akis bekler:
                 // il<64 -> tiny (il<<2)|2, degilse 12-byte fat header.
@@ -447,6 +461,12 @@ class NBIlMerge {
                         if (ehAdded > 0 || ehDropped > 0)
                             Console.WriteLine("  [eh] " + stem + " added=" + ehAdded + " dropped=" + ehDropped);
                     }
+                    // NecroBit marks decoys as runtime-implemented; a real
+                    // body replaces the stub, so the flag must go — keeping
+                    // it makes the JIT throw TypeLoadException
+                    // ("Runtime-implemented method with non-zero RVA").
+                    if ((m.ImplAttributes & MethodImplAttributes.Runtime) != 0)
+                        m.ImplAttributes &= ~MethodImplAttributes.Runtime;
                     m.Body = newBody;
                     restored++;
                 } else skipped++;
