@@ -47,10 +47,24 @@ jobs:
         shell: bash
         run: |
           set -e
-          for f in autoreaktor.py hunt.py hunt_list.py vmres_extract.py \
+          for f in autoreaktor.py hunt.py hunt_list.py vmres_extract.py tools/selftest.py \
                    v3/nbdump.py v3/nbdumphost.py \
                    v3/jitdump/nbjitdump.py v3/jitdump/jitdrive.py \
                    v3/jitdump/auto_stubmap.py v3/jitdump/build_hook.py \
                    v3/jitdump/merge_prep.py v3/jitdump/msvc_env.py; do
             python -m py_compile "$f"
           done
+
+  selftest:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: End-to-end machinery selftest
+        shell: bash
+        run: python tools/selftest.py
