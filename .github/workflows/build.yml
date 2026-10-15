@@ -9,10 +9,10 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
@@ -28,6 +28,12 @@ jobs:
             'v3/nbprof/nbprof.csproj',
             'v3/nagstrip/nagstrip.csproj',
             'v3/nagstrip/nbfixctor2.csproj',
+            'v3/nagstrip/pinv.csproj',
+            'v3/nagstrip/jittest.csproj',
+            'v3/nagstrip/refltest.csproj',
+            'v3/nagstrip/dcheck2.csproj',
+            'v3/nagstrip/restest2.csproj',
+            'v3/nagstrip/tlist.csproj',
             'v3/jitdump/nbilmerge.csproj'
           )
           $failed = $false
