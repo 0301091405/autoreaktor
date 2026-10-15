@@ -25,7 +25,20 @@ struct CORINFO_METHOD_INFO {
     void* locals;
 };
 
+// CORINFO_EH_CLAUSE — corinfo.h layout, 28 bytes, identical on Framework
+// 4.x and CoreCLR. Captured via the getEHinfo vtable slot so merged bodies
+// keep their exception handlers (the IL snapshot alone carries no EH data).
+struct CORINFO_EH_CLAUSE {
+    std::uint32_t Flags;          // 0=catch 1=filter 2=finally 3=fault
+    std::uint32_t TryOffset;
+    std::uint32_t TryLen;
+    std::uint32_t HandlerOffset;
+    std::uint32_t HandlerLen;
+    std::uint32_t ClassToken;
+    std::uint32_t FilterOffset;
+};
 typedef int(__stdcall* CompileFn)(void*, void*, CORINFO_METHOD_INFO*, unsigned, std::uint8_t**, std::uint32_t*);
+typedef void(__stdcall* EHFn)(void* info, unsigned ehNumber, CORINFO_EH_CLAUSE* clause);
 typedef void* (__stdcall* GetJitFn)();
 
 static GetJitFn g_getJit = nullptr;
@@ -37,6 +50,15 @@ static char g_outDir[MAX_PATH] = "";
 static std::vector<std::string> g_lines;
 static std::mutex g_lines_mtx;
 static std::uint32_t g_tokCounter = 0;
+
+// EH capture state. getEHinfo fires on the same thread as compileMethod and
+// is asked clause-by-clause DURING the original compile, so capture runs in
+// thread_local storage keyed by the CORINFO_METHOD_INFO pointer we saw.
+static EHFn g_origEH = nullptr;
+static bool g_ehHookAttempted = false;
+static std::uint32_t g_ehSlot = 0;
+static thread_local void* t_curInfo = nullptr;
+static thread_local std::vector<CORINFO_EH_CLAUSE> t_curEh;
 
 // getMethodDefFromMethod vtable index: Framework 4.x x86 offset-read is
 // proven; x64 uses vtable (NB_TOKENMODE=vt) or chunk-derived synthetic.
@@ -127,6 +149,45 @@ static bool dumpLdstrLiterals(void* comp, const std::uint8_t* il, unsigned ilSiz
     return any;
 }
 
+// getEHinfo vtable hook: NB_EHSLOT names the ICorJitInfo slot (runtime
+// dependent, same discovery pattern as NB_STRSLOT/NB_VTSLOT). The JIT asks
+// for clauses 0..EHcount-1 during the original compileMethod; we forward,
+// store by index, and nbilmerge rebuilds the EH section from the .eh file.
+static void __stdcall HookedGetEHinfo(void* info, unsigned n, CORINFO_EH_CLAUSE* clause) {
+    g_origEH(info, n, clause);
+    if (t_curInfo && info == t_curInfo && clause && n <= 4096) {
+        if (n == 0) t_curEh.clear();
+        else {
+            if (t_curEh.size() <= n) t_curEh.resize(n + 1);
+            t_curEh[n] = *clause;
+        }
+    }
+}
+
+static void tryInstallEHHook(void* comp) {
+    if (g_ehHookAttempted) return;
+    g_ehHookAttempted = true;
+    const char* es = getenv("NB_EHSLOT");
+    if (!es || !*es) return;              // not configured -> EH capture off
+    g_ehSlot = (std::uint32_t)atoi(es);
+    if (!g_ehSlot || !comp) return;
+    __try {
+        void** vt = *(void***)comp;
+        DWORD op;
+        if (!VirtualProtect(&vt[g_ehSlot], sizeof(void*), PAGE_EXECUTE_READWRITE, &op)) return;
+        g_origEH = (EHFn)vt[g_ehSlot];
+        if (!g_origEH) return;
+        vt[g_ehSlot] = (void*)&HookedGetEHinfo;
+        VirtualProtect(&vt[g_ehSlot], sizeof(void*), op, &op);
+        char mp[MAX_PATH]; char msg[128];
+        std::snprintf(msg, sizeof(msg), "EH-HOOK-OK slot=%lu orig=%p",
+            (unsigned long)g_ehSlot, (void*)g_origEH);
+        std::snprintf(mp, sizeof(mp), "%s\\marker.txt", g_outDir);
+        FILE* f = nullptr;
+        if (fopen_s(&f, mp, "ab") == 0) { fputs(msg, f); fputc('\n', f); fclose(f); }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { g_origEH = nullptr; }
+}
+
 static int __stdcall HookedCompileMethod(
     void* self, void* comp, CORINFO_METHOD_INFO* info, unsigned flags,
     std::uint8_t** nativeEntry, std::uint32_t* nativeSize)
@@ -150,7 +211,20 @@ static int __stdcall HookedCompileMethod(
             dumpLdstrLiterals(comp, pre.data(), preIl);
     }
 
+    tryInstallEHHook(comp);
+    t_curInfo = nullptr;
+    t_curEh.clear();
+    if (g_origEH && preEh > 0)
+        t_curInfo = info;   // getEHinfo's first arg is this same METHOD_INFO*
+
     int r = ((CompileFn)g_origCompile)(self, comp, info, flags, nativeEntry, nativeSize);
+
+    std::vector<CORINFO_EH_CLAUSE> ehOut;
+    if (preEh > 0 && t_curEh.size() >= preEh)
+        ehOut.assign(t_curEh.begin(), t_curEh.begin() + preEh);
+    t_curInfo = nullptr;
+    t_curEh.clear();
+
     if (!pre.empty()) {
         std::uint32_t real = resolveRealToken(comp, preFtn);
         std::uint32_t tok = real ? real : ++g_tokCounter;
@@ -165,10 +239,26 @@ static int __stdcall HookedCompileMethod(
                 fwrite(hdr, 1, sizeof(hdr), f);
                 fwrite(pre.data(), 1, preIl, f);
                 fclose(f);
+                // EH clauses captured from the getEHinfo hook (NB_EHSLOT):
+                // [u32 count][count x 28-byte CORINFO_EH_CLAUSE]. Written
+                // only when the JIT actually queried every clause; the JIT
+                // always asks for all EHcount clauses of a method it compiles.
+                if (!ehOut.empty()) {
+                    char epath[MAX_PATH];
+                    std::snprintf(epath, sizeof(epath), "%s\\m_%08X.eh", g_outDir, tok);
+                    FILE* fe = nullptr;
+                    if (fopen_s(&fe, epath, "wb") == 0 && fe) {
+                        std::uint32_t cnt = (std::uint32_t)ehOut.size();
+                        fwrite(&cnt, 1, sizeof(cnt), fe);
+                        fwrite(ehOut.data(), sizeof(CORINFO_EH_CLAUSE), cnt, fe);
+                        fclose(fe);
+                    }
+                }
                 std::lock_guard<std::mutex> lk2(g_lines_mtx);
                 char line[160];
-                std::snprintf(line, sizeof(line), "token=0x%08X il=%u maxStack=%u eh=%u PRE",
-                               tok, preIl, preMaxStack, preEh);
+                std::snprintf(line, sizeof(line), "token=0x%08X il=%u maxStack=%u eh=%u%s PRE",
+                               tok, preIl, preMaxStack, preEh,
+                               ehOut.empty() ? "" : "+captured");
                 g_lines.push_back(line);
             }
         }
