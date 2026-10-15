@@ -1,0 +1,42 @@
+[
+ {
+  "cell": "con48x86|full",
+  "result": "run-recovered",
+  "restored": 220,
+  "bodies": 258,
+  "runnable": true,
+  "secs": 55.9
+ },
+ {
+  "cell": "con48x64|full",
+  "result": "slayer-clean",
+  "restored": null,
+  "bodies": 0,
+  "runnable": false,
+  "secs": 13.9
+ },
+ {
+  "cell": "con8|full",
+  "result": "slayer-clean",
+  "restored": 230,
+  "bodies": 265,
+  "runnable": false,
+  "secs": 50.6
+ },
+ {
+  "cell": "gen48x86|full",
+  "result": "run-recovered",
+  "restored": 221,
+  "bodies": 258,
+  "runnable": true,
+  "secs": 83.3
+ },
+ {
+  "cell": "forms48x86|full",
+  "result": "slayer-clean",
+  "restored": 225,
+  "bodies": 263,
+  "runnable": false,
+  "secs": 67.9
+ }
+]
