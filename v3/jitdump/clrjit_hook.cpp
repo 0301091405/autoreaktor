@@ -27,19 +27,12 @@ struct CORINFO_METHOD_INFO {
 };
 
 // CORINFO_EH_CLAUSE — corinfo.h layout, 28 bytes, identical on Framework
-// 4.x and CoreCLR. Captured via the getEHinfo vtable slot so merged bodies
-// keep their exception handlers (the IL snapshot alone carries no EH data).
-struct CORINFO_EH_CLAUSE {
-    std::uint32_t Flags;          // 0=catch 1=filter 2=finally 3=fault
-    std::uint32_t TryOffset;
-    std::uint32_t TryLen;
-    std::uint32_t HandlerOffset;
-    std::uint32_t HandlerLen;
-    std::uint32_t ClassToken;
-    std::uint32_t FilterOffset;
-};
+// and CoreCLR. Clause tables are NOT captured via a vtable hook: the section
+// sits in memory right after the IL bytes and the snapshot grabs it whole
+// (header dword 4 = extra length past the IL). Clause field order matches
+// this struct: Flags(0=catch 1=filter 2=finally 3=fault), TryOffset,
+// TryLen, HandlerOffset, HandlerLen, ClassToken, FilterOffset.
 typedef int(__stdcall* CompileFn)(void*, void*, CORINFO_METHOD_INFO*, unsigned, std::uint8_t**, std::uint32_t*);
-typedef void(__stdcall* EHFn)(void* info, unsigned ehNumber, CORINFO_EH_CLAUSE* clause);
 typedef void* (__stdcall* GetJitFn)();
 
 static GetJitFn g_getJit = nullptr;
@@ -51,15 +44,6 @@ static char g_outDir[MAX_PATH] = "";
 static std::vector<std::string> g_lines;
 static std::mutex g_lines_mtx;
 static std::uint32_t g_tokCounter = 0;
-
-// EH capture state. getEHinfo fires on the same thread as compileMethod and
-// is asked clause-by-clause DURING the original compile, so capture runs in
-// thread_local storage keyed by the CORINFO_METHOD_INFO pointer we saw.
-static EHFn g_origEH = nullptr;
-static bool g_ehHookAttempted = false;
-static std::uint32_t g_ehSlot = 0;
-static thread_local void* t_curInfo = nullptr;
-static thread_local std::vector<CORINFO_EH_CLAUSE> t_curEh;
 
 // Scope grouping (NB_SCOPE_DIRS=1): every distinct info->scope (one CLR
 // module each) gets its own subdirectory, so ONLY the target module's
@@ -176,53 +160,24 @@ static bool dumpLdstrLiterals(void* comp, const std::uint8_t* il, unsigned ilSiz
     return any;
 }
 
-// getEHinfo vtable hook: NB_EHSLOT names the ICorJitInfo slot (runtime
-// dependent, same discovery pattern as NB_STRSLOT/NB_VTSLOT). The JIT asks
-// for clauses 0..EHcount-1 during the original compileMethod; we forward,
-// store by index, and nbilmerge rebuilds the EH section from the .eh file.
-static void __stdcall HookedGetEHinfo(void* info, unsigned n, CORINFO_EH_CLAUSE* clause) {
-    g_origEH(info, n, clause);
-    if (t_curInfo && info == t_curInfo && clause && n <= 4096) {
-        if (n == 0) t_curEh.clear();
-        else {
-            if (t_curEh.size() <= n) t_curEh.resize(n + 1);
-            t_curEh[n] = *clause;
-        }
-    }
-}
+static bool installHook();
 
-static void tryInstallEHHook(void* comp) {
-    if (g_ehHookAttempted) return;
-    g_ehHookAttempted = true;
-    const char* es = getenv("NB_EHSLOT");
-    if (!es || !*es) return;              // not configured -> EH capture off
-    g_ehSlot = (std::uint32_t)atoi(es);
-    if (!g_ehSlot || !comp) return;
-    __try {
-        void** vt = *(void***)comp;
-        DWORD op;
-        if (!VirtualProtect(&vt[g_ehSlot], sizeof(void*), PAGE_EXECUTE_READWRITE, &op)) return;
-        g_origEH = (EHFn)vt[g_ehSlot];
-        if (!g_origEH) return;
-        vt[g_ehSlot] = (void*)&HookedGetEHinfo;
-        VirtualProtect(&vt[g_ehSlot], sizeof(void*), op, &op);
-        char mp[MAX_PATH]; char msg[128];
-        std::snprintf(msg, sizeof(msg), "EH-HOOK-OK slot=%lu orig=%p",
-            (unsigned long)g_ehSlot, (void*)g_origEH);
-        std::snprintf(mp, sizeof(mp), "%s\\marker.txt", g_outDir);
-        FILE* f = nullptr;
-        if (fopen_s(&f, mp, "ab") == 0) { fputs(msg, f); fputc('\n', f); fclose(f); }
-    } __except (EXCEPTION_EXECUTE_HANDLER) { g_origEH = nullptr; }
-}
+
+
+static void markerLine(const char* msg);
 
 static int __stdcall HookedCompileMethod(
     void* self, void* comp, CORINFO_METHOD_INFO* info, unsigned flags,
     std::uint8_t** nativeEntry, std::uint32_t* nativeSize)
 {
+    {
+        static volatile long seen = 0;
+        if (_InterlockedIncrement(&seen) == 1) markerLine("compile-seen #1");
+    }
     // ENTRY SNAPSHOT: NecroBit fills the IL buffer right before entry and
     // wipes it after — copy on the FIRST line, before the original call.
     std::vector<std::uint8_t> pre;
-    std::uint32_t preIl = 0, preMaxStack = 0, preEh = 0;
+    std::uint32_t preIl = 0, preMaxStack = 0, preEh = 0, preExtra = 0;
     void* preFtn = nullptr;
     if (info && info->ILCode && info->ILCodeSize > 0 && info->ILCodeSize < (4u << 20)) {
         preIl = info->ILCodeSize;
@@ -230,6 +185,41 @@ static int __stdcall HookedCompileMethod(
         preEh = info->EHcount;
         preFtn = info->ftn;
         pre.assign(info->ILCode, info->ILCode + info->ILCodeSize);
+        if (info->EHcount > 0) {
+            // The EH clause section sits in memory right after the IL bytes
+            // (4-aligned) — getEHinfo reads it from exactly there. Snapshot
+            // the tail too and nbilmerge rebuilds handlers from it: no
+            // vtable slot, no per-runtime probing. SEH-guarded: ILCode may
+            // end at a page boundary.
+            __try {
+                // The section is 4-aligned FROM THE BODY START (header
+                // included), so its offset relative to ILCode depends on the
+                // header size we don't know here (tiny 1 / fat 12). Probe the
+                // candidate offsets and take the one carrying an EH-table
+                // section (kind 0x66; 0x40 flag = fat clauses).
+                const std::uint32_t cand[3] = {
+                    (preIl + 3u) & ~3u,                       // tiny-header alignment
+                    ((preIl + 12u + 3u) & ~3u) - 12u,         // fat-header alignment
+                    ((preIl + 8u + 3u) & ~3u) - 8u,           // defensive middle
+                };
+                for (int ci = 0; ci < 3 && preExtra == 0; ci++) {
+                    std::uint32_t sec_off = cand[ci];
+                    if (sec_off < preIl) continue;
+                    std::uint32_t kind = *(std::uint32_t*)(info->ILCode + sec_off);
+                    if ((kind & 0xFF) != 0x66) continue;
+                    std::uint32_t dsize = *(std::uint32_t*)(info->ILCode + sec_off + 4);
+                    if (dsize == 0 || dsize > 65536) continue;
+                    std::uint32_t total = sec_off + 8 + dsize;
+                    if (total <= preIl || total > (4u << 20)) continue;
+                    pre.resize(total);
+                    memcpy(pre.data() + preIl, info->ILCode + preIl, total - preIl);
+                    preExtra = total - preIl;
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                if (pre.size() > preIl) pre.resize(preIl);
+                preExtra = 0;
+            }
+        }
         // v4: capture ldstr literal contents — SEH-guarded inside; a wrong
         // vtable slot can still destabilize the JIT under some hosts, so
         // default OFF; NB_STRDUMP=1 enables.
@@ -238,20 +228,7 @@ static int __stdcall HookedCompileMethod(
             dumpLdstrLiterals(comp, pre.data(), preIl);
     }
 
-    tryInstallEHHook(comp);
-    t_curInfo = nullptr;
-    t_curEh.clear();
-    if (g_origEH && preEh > 0)
-        t_curInfo = info;   // getEHinfo's first arg is this same METHOD_INFO*
-
-
     int r = ((CompileFn)g_origCompile)(self, comp, info, flags, nativeEntry, nativeSize);
-
-    std::vector<CORINFO_EH_CLAUSE> ehOut;
-    if (preEh > 0 && t_curEh.size() >= preEh)
-        ehOut.assign(t_curEh.begin(), t_curEh.begin() + preEh);
-    t_curInfo = nullptr;
-    t_curEh.clear();
 
     if (!pre.empty()) {
         std::uint32_t real = resolveRealToken(comp, preFtn);
@@ -271,30 +248,14 @@ static int __stdcall HookedCompileMethod(
             std::snprintf(path, sizeof(path), "%s\\m_%08X.bin", dir, tok);
             FILE* f = nullptr;
             if (fopen_s(&f, path, "wb") == 0 && f) {
-                std::uint32_t hdr[5] = { tok, preIl, preMaxStack, preEh, 0 };
+                std::uint32_t hdr[5] = { tok, preIl, preMaxStack, preEh, preExtra };
                 fwrite(hdr, 1, sizeof(hdr), f);
-                fwrite(pre.data(), 1, preIl, f);
+                fwrite(pre.data(), 1, pre.size(), f);
                 fclose(f);
-                // EH clauses captured from the getEHinfo hook (NB_EHSLOT):
-                // [u32 count][count x 28-byte CORINFO_EH_CLAUSE]. Written
-                // only when the JIT actually queried every clause; the JIT
-                // always asks for all EHcount clauses of a method it compiles.
-                if (!ehOut.empty()) {
-                    char epath[MAX_PATH];
-                    std::snprintf(epath, sizeof(epath), "%s\\m_%08X.eh", dir, tok);
-                    FILE* fe = nullptr;
-                    if (fopen_s(&fe, epath, "wb") == 0 && fe) {
-                        std::uint32_t cnt = (std::uint32_t)ehOut.size();
-                        fwrite(&cnt, 1, sizeof(cnt), fe);
-                        fwrite(ehOut.data(), sizeof(CORINFO_EH_CLAUSE), cnt, fe);
-                        fclose(fe);
-                    }
-                }
                 std::lock_guard<std::mutex> lk2(g_lines_mtx);
                 char line[180];
-                std::snprintf(line, sizeof(line), "scope=%d token=0x%08X il=%u maxStack=%u eh=%u%s PRE",
-                               scopeIdx, tok, preIl, preMaxStack, preEh,
-                               ehOut.empty() ? "" : "+captured");
+                std::snprintf(line, sizeof(line), "scope=%d token=0x%08X il=%u maxStack=%u eh=%u extra=%u PRE",
+                               scopeIdx, tok, preIl, preMaxStack, preEh, preExtra);
                 g_lines.push_back(line);
             }
         }
@@ -302,13 +263,42 @@ static int __stdcall HookedCompileMethod(
     return r;
 }
 
+static void markerLine(const char* msg) {
+    char mp[MAX_PATH];
+    std::snprintf(mp, sizeof(mp), "%s\\marker.txt", g_outDir);
+    FILE* f = nullptr;
+    if (fopen_s(&f, mp, "ab") == 0) { fputs(msg, f); fputc('\n', f); fclose(f); }
+}
+
 static bool installHook() {
     HMODULE h = GetModuleHandleW(L"clrjit.dll");
     if (!h) h = GetModuleHandleW(L"mscorjit.dll");
-    if (!h) h = LoadLibraryW(L"clrjit.dll");
-    if (!h) return false;
+    if (!h) {
+        // bare-name search misses the Framework JIT: it lives under
+        // \Microsoft.NET\Framework[64]\v4.0.30319, outside the DLL search
+        // path. Only fall back to the full path inside a FRAMEWORK process —
+        // the discriminator is clr.dll (the Framework engine; CoreCLR never
+        // loads it). Without the gate a .NET Core process would get the
+        // wrong JIT hooked and compile invisibly.
+        if (GetModuleHandleW(L"clr.dll")) {
+            h = LoadLibraryW(
+#ifdef _WIN64
+                L"C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\clrjit.dll"
+#else
+                L"C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\clrjit.dll"
+#endif
+            );
+        }
+        if (!h) h = LoadLibraryW(L"clrjit.dll");
+        if (!h) h = LoadLibraryW(L"mscorjit.dll");
+    }
+    if (!h) {
+        static long attempts = 0;
+        if (++attempts == 30) markerLine("install: no JIT library found");
+        return false;
+    }
     g_getJit = (GetJitFn)GetProcAddress(h, "getJit");
-    if (!g_getJit) return false;
+    if (!g_getJit) { markerLine("install: getJit export missing"); return false; }
     void* jit = g_getJit();
     if (!jit) return false;
     void** vt = *(void***)jit;
@@ -327,6 +317,7 @@ static bool installHook() {
     }
     return true;
 }
+
 
 static void flushLog() {
     char path[MAX_PATH];
@@ -359,10 +350,12 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID) {
         installHook();
         // then keep the retry loop, but 10ms instead of 100ms.
         CreateThread(0, 0, [](void*) -> DWORD {
-            for (int i = 0; i < 6000; i++) {
+            // 1 ms poll: short-lived console targets JIT within their first
+            // seconds; a 10 ms poll can lose that race entirely (0 bodies)
+            for (int i = 0; i < 60000; i++) {
                 if (g_origCompile) break;
                 if (installHook()) break;
-                Sleep(10);
+                Sleep(1);
             }
             return 0;
             }, 0, 0, 0);
