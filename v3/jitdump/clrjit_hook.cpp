@@ -177,7 +177,7 @@ static int __stdcall HookedCompileMethod(
     // ENTRY SNAPSHOT: NecroBit fills the IL buffer right before entry and
     // wipes it after — copy on the FIRST line, before the original call.
     std::vector<std::uint8_t> pre;
-    std::uint32_t preIl = 0, preMaxStack = 0, preEh = 0, preExtra = 0;
+    std::uint32_t preIl = 0, preMaxStack = 0, preEh = 0, preExtra = 0, preLocalsTok = 0;
     void* preFtn = nullptr;
     if (info && info->ILCode && info->ILCodeSize > 0 && info->ILCodeSize < (4u << 20)) {
         preIl = info->ILCodeSize;
@@ -185,6 +185,37 @@ static int __stdcall HookedCompileMethod(
         preEh = info->EHcount;
         preFtn = info->ftn;
         pre.assign(info->ILCode, info->ILCode + info->ILCodeSize);
+        // LOCALS: restored bodies need their real LocalVarSig — Object-only
+        // locals make value-type stores unverifiable (InvalidProgram). The
+        // sig token sits in CORINFO_METHOD_INFO.locals.tok, inside the
+        // embedded CORINFO_SIG_INFO structs after the fixed header. The only
+        // 0x11-table (StandAloneSig) dword in that window is locals.tok;
+        // SEH-guarded, wrong guess degrades to the Object-local path.
+        __try {
+            // NB_METADUMP=1 (diagnostics): write the first 0xC0 bytes of the
+            // struct once per process so the real layout can be read offline
+            static bool metaDumped = false;
+            char mdEnv[8];
+            if (!metaDumped && GetEnvironmentVariableA("NB_METADUMP", mdEnv, 8) &&
+                strcmp(mdEnv, "1") == 0 && info->ILCodeSize > 4)
+            {
+                metaDumped = true;
+                char mpath[MAX_PATH];
+                std::snprintf(mpath, sizeof(mpath), "%s/minfo_%08X.bin",
+                              g_outDir, preIl);
+                FILE* fm = nullptr;
+                if (fopen_s(&fm, mpath, "wb") == 0 && fm)
+                { fwrite(info, 1, 0xC0, fm); fclose(fm); }
+            }
+            const std::uint32_t* dw = (const std::uint32_t*)info;
+            for (int off = 3; off < 0xC0 / 4; off++) {
+                std::uint32_t v = dw[off];
+                if ((v & 0xFF000000u) == 0x11000000u && (v & 0x00FFFFFFu) != 0) {
+                    preLocalsTok = v;
+                    break;
+                }
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) { preLocalsTok = 0; }
         if (info->EHcount > 0) {
             // The EH clause section sits in memory right after the IL bytes
             // (4-aligned) — getEHinfo reads it from exactly there. Snapshot
@@ -248,7 +279,7 @@ static int __stdcall HookedCompileMethod(
             std::snprintf(path, sizeof(path), "%s\\m_%08X.bin", dir, tok);
             FILE* f = nullptr;
             if (fopen_s(&f, path, "wb") == 0 && f) {
-                std::uint32_t hdr[5] = { tok, preIl, preMaxStack, preEh, preExtra };
+                std::uint32_t hdr[6] = { tok, preIl, preMaxStack, preEh, preExtra, preLocalsTok };
                 fwrite(hdr, 1, sizeof(hdr), f);
                 fwrite(pre.data(), 1, pre.size(), f);
                 fclose(f);

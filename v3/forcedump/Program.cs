@@ -114,10 +114,14 @@ static class ForceDump
             }
             foreach (MethodInfo m in methods)
             {
+                byte[] ilBytes = null;
+                MethodBody body0 = null;
                 try
                 {
                     var body = m.GetMethodBody();
                     if (body == null) { skipped++; continue; }   // abstract/extern/pinvoke
+                    body0 = body;
+                    ilBytes = body.GetILAsByteArray();
                     RuntimeHelpers.PrepareMethod(m.MethodHandle);
                     prepared++;
                     // Exception clauses ride along, read from the SAME decoded
@@ -127,7 +131,7 @@ static class ForceDump
                     // 28B: flags, tryOff, tryLen, hOff, hLen, classTok,
                     // filterOff]. Managed option enums map 1:1 except Fault
                     // (4 managed -> 3 CORINFO).
-                    var ilBytes = body.GetILAsByteArray();
+                    ilBytes = body.GetILAsByteArray();
                     manifest.Add(new int[] { m.MetadataToken, ilBytes.Length });
                     // Dump the decoded body under its REAL MethodDef token —
                     // the JIT hook's x86 token reads can be unreliable on
@@ -140,16 +144,25 @@ static class ForceDump
                     {
                         try
                         {
-                            var bout = new byte[20 + ilBytes.Length];
-                            Put(bout, 0, (uint)m.MetadataToken);
-                            Put(bout, 4, (uint)ilBytes.Length);
-                            Put(bout, 8, (uint)body.MaxStackSize);
-                            Put(bout, 12, (uint)body.ExceptionHandlingClauses.Count);
-                            Put(bout, 16, 0);
-                            Array.Copy(ilBytes, 0, bout, 20, ilBytes.Length);
-                            File.WriteAllBytes(Path.Combine(bdir,
-                                "m_" + m.MetadataToken.ToString("X8") + ".bin"), bout);
-                            dumped++;
+                            // 24-byte header, same layout as the hook: the
+                            // sixth dword is the LocalVarSig token, which only
+                            // the hook can see — never overwrite its dumps
+                            string bpath = Path.Combine(bdir,
+                                "m_" + m.MetadataToken.ToString("X8") + ".bin");
+                            if (File.Exists(bpath)) { dumped++; }
+                            else
+                            {
+                                var bout = new byte[24 + ilBytes.Length];
+                                Put(bout, 0, (uint)m.MetadataToken);
+                                Put(bout, 4, (uint)ilBytes.Length);
+                                Put(bout, 8, (uint)body.MaxStackSize);
+                                Put(bout, 12, (uint)body.ExceptionHandlingClauses.Count);
+                                Put(bout, 16, 0);
+                                Put(bout, 20, 0);
+                                Array.Copy(ilBytes, 0, bout, 24, ilBytes.Length);
+                                File.WriteAllBytes(bpath, bout);
+                                dumped++;
+                            }
                         }
                         catch { }
                     }
@@ -201,6 +214,31 @@ static class ForceDump
                     // open generics and runtime-refused bodies land here —
                     // counted, never fatal
                     failed++;
+                    // a body we ALREADY read still gets dumped: prepare
+                    // failures (entry points on packed modules, exotic
+                    // methods) must not lose recoverable bodies
+                    if (ilBytes != null && ilBytes.Length > 0)
+                    {
+                        try
+                        {
+                            string bdir2 = Environment.GetEnvironmentVariable("JITDUMP_DIR");
+                            string p2 = Path.Combine(bdir2, "m_" + m.MetadataToken.ToString("X8") + ".bin");
+                            if (!File.Exists(p2))
+                            {
+                                var bout2 = new byte[24 + ilBytes.Length];
+                                Put(bout2, 0, (uint)m.MetadataToken);
+                                Put(bout2, 4, (uint)ilBytes.Length);
+                                Put(bout2, 8, (uint)(body0?.MaxStackSize ?? 8));
+                                Put(bout2, 12, 0);
+                                Put(bout2, 16, 0);
+                                Put(bout2, 20, 0);
+                                Array.Copy(ilBytes, 0, bout2, 24, ilBytes.Length);
+                                File.WriteAllBytes(p2, bout2);
+                                dumped++;
+                            }
+                        }
+                        catch { }
+                    }
                 }
             }
             // class constructors: RunClassConstructor JITs the cctor body too

@@ -165,13 +165,15 @@ class NBIlMerge {
         var files = Directory.GetFiles(a[1], "m_*.bin");
         var bodies = new List<byte[]>();
         var toks = new List<uint>();
+        var localsToks = new List<uint>();
         foreach (var f in files) {
             var d = File.ReadAllBytes(f);
             uint tok = BitConverter.ToUInt32(d, 0);
             uint il = BitConverter.ToUInt32(d, 4);
-            var body = new byte[il];
-            Array.Copy(d, 20, body, 0, il);
-            toks.Add(tok); bodies.Add(body);
+            uint localsTok = d.Length >= 24 ? BitConverter.ToUInt32(d, 20) : 0;
+            var body = new byte[d.Length - 24];
+            Array.Copy(d, 24, body, 0, body.Length);
+            toks.Add(tok); bodies.Add(body); localsToks.Add(localsTok);
         }
         Console.WriteLine("dump body: " + toks.Count);
 
@@ -253,9 +255,11 @@ class NBIlMerge {
                                     ldstrMap[tk] = kv[1];
                                 }
                             }
-                var tokenMap = new System.Collections.Generic.Dictionary<uint, uint>();
+                var tokenMap = (System.Collections.Generic.Dictionary<uint, uint>)null;
                 string tmPath = Environment.GetEnvironmentVariable("NB_TOKENMAP");
                 if (!string.IsNullOrEmpty(tmPath) && System.IO.File.Exists(tmPath))
+                {
+                    tokenMap = new System.Collections.Generic.Dictionary<uint, uint>();
                     foreach (var ln in System.IO.File.ReadAllLines(tmPath))
                     {
                         var parts = ln.Trim().Split(' ');
@@ -265,18 +269,21 @@ class NBIlMerge {
                             uint.TryParse(parts[1], System.Globalization.NumberStyles.HexNumber, null, out b))
                             tokenMap[o] = b;
                     }
+                }
                 int seqIdx = 0;
                         int stubHit = 0;
                         int stubTokHit = 0, ldstrRebound = 0;
         for (int i = 0; i < toks.Count; i++) {
             // NB_STUBMAPTOK first (token-precise), then NB_STUBMAP (name).
             string baseName = System.IO.Path.GetFileName(files[i]);
-            uint effTok = toks[i];   // possibly translated via NB_TOKENMAP
                             MethodDef stubTarget = null;
                             string dumpName = null;
                             string tokName = null;
                             if (stubTokMap.Count > 0 && stubTokMap.TryGetValue(baseName, out tokName)) {
                                 uint mt; if (uint.TryParse(tokName, System.Globalization.NumberStyles.HexNumber, null, out mt)) {
+                                    // pairs carry ORIGINAL-module tokens — translate
+                                    // them when the base shifted rids (slayer bases)
+                                    if (tokenMap != null && tokenMap.TryGetValue(mt, out var mapped)) mt = mapped;
                                     foreach (var t in mod.GetTypes())
                                         foreach (var mstub in t.Methods)
                                             if (mstub.MDToken.Raw == mt) { stubTarget = mstub; break; }
@@ -294,10 +301,23 @@ class NBIlMerge {
                 }
             }
             if (noBodyWrite) { skipped++; continue; }
+            if (i < 3) Console.WriteLine("  [dbg" + i + "] tok=0x" + toks[i].ToString("X8") +
+                " map=" + (tokenMap == null ? "off" : tokenMap.Count.ToString()));
+            // NB_TOKENMAP: translate original-module dump tokens into the
+            // base module's rids (slayer bases can shift rids; binding by
+            // the raw dump token would cross-bind wrong bodies). Unmapped
+            // tokens are skipped, never cross-bound.
+            uint effTok = toks[i];
+            if (tokenMap != null)
+            {
+                uint mapped;
+                if (tokenMap.TryGetValue(toks[i], out mapped)) effTok = mapped;
+                else { skipped++; continue; }
+            }
             MethodDef m = stubTarget;
-                        bool have = stubTarget != null;
-                        if (!have) have = byToken.TryGetValue(effTok, out m);
-                        if (!have || m == null) {
+            bool have = stubTarget != null;
+            if (!have) have = byToken.TryGetValue(effTok, out m);
+            if (!have || m == null) {
                 if (seqMode && seqIdx < bodyless.Count) {
                                     m = bodyless[seqIdx++];
                                     if (m == null) { skipped++; continue; }
@@ -335,23 +355,15 @@ class NBIlMerge {
             {
                 var bfn = m.DeclaringType.BaseType.FullName;
                 if (bfn.Contains("System.Delegate") || bfn.Contains("System.MulticastDelegate"))
-                { skipped++; continue; }
+                { skipped++; if (skipped < 4) Console.WriteLine("  [skip] delegate: " + m.DeclaringType.FullName); continue; }
             }
             // generic types load-validate every member; a body written with
             // Object-only locals can fail that check — leave generics to the
             // reflection-equivalence pass until locals carry real types
             if (m != null && m.DeclaringType != null && m.DeclaringType.HasGenericParameters)
-            { skipped++; continue; }
-            // NB_TOKENMAP: translate original-module dump tokens into the
-            // base module's rids (slayer bases can shift rids; binding by
-            // the raw dump token would cross-bind wrong bodies)
-            if (tokenMap != null)
-            {
-                uint mapped;
-                if (tokenMap.TryGetValue(toks[i], out mapped)) effTok = mapped;
-                else { skipped++; continue; }   // no identity in this base
-            }
+            { skipped++; if (skipped < 4) Console.WriteLine("  [skip] generic: " + m.DeclaringType.FullName); continue; }
             try {
+                if (i < 3) Console.WriteLine("  [dbg" + i + "] try-entered m=" + (m == null ? "null" : m.Name.String));
                 // CreateCilBody METHOD BODY HEADER'li akis bekler:
                 // il<64 -> tiny (il<<2)|2, degilse 12-byte fat header.
                 uint il = (uint)bodies[i].Length;
@@ -377,16 +389,44 @@ class NBIlMerge {
                 var newBody = dnlib.DotNet.Emit.MethodBodyReader.CreateCilBody(
                     (dnlib.DotNet.Emit.IInstructionOperandResolver)mod,
                     dr, m.Parameters);
+                if (i < 3) Console.WriteLine("  [dbg" + i + "] create done, instrs=" +
+                    (newBody == null ? -1 : newBody.Instructions.Count));
                 if (newBody != null && newBody.Instructions.Count > 0) {
+                    // REAL LOCALS: NecroBit encrypts method BODIES only — the
+                    // module's StandAloneSig rows (local signatures) stay
+                    // intact. Read the target method's own LocalVarSigTok from
+                    // the metadata and resolve it: Object-only locals make
+                    // value-type stores unverifiable IL (InvalidProgram).
+                    bool realLocals = false;
+                    uint ltok = localsToks[i];
+                    try {
+                        if (m.HasBody && m.Body != null && m.Body.LocalVarSigTok != 0) ltok = m.Body.LocalVarSigTok;
+                    } catch { }
+                    if (i < 3) Console.WriteLine("  [dbg" + i + "] sigtok=" + ltok);
+                        if (ltok != 0) {
+                        try {
+                            var resolvedSig = ((ITokenResolver)mod).ResolveToken(ltok, new GenericParamContext());
+                            var sas = resolvedSig as StandAloneSig;
+                            var lsig = sas == null ? null : sas.Signature as LocalSig;
+                            if (lsig != null && lsig.Locals.Count > 0) {
+                                newBody.Variables.Clear();
+                                foreach (var t in lsig.Locals)
+                                    newBody.Variables.Add(new Local(t));
+                                newBody.LocalVarSigTok = ltok;
+                                realLocals = true;
+                            }
+                        } catch { }
+                    }
+                    if (i < 3) Console.WriteLine("  [dbg" + i + "] realLocals=" + realLocals);
                     // v49 LDSTR REBIND: NecroBit string-enc leaves runtime-only
                     // ldstr tokens in the dumped IL. If NB_LDSTRMAP carries the
                     // literal, replace the operand with the real string — dnlib
                     // writes it into the OUT module's US heap content-true.
                     foreach (var ins in newBody.Instructions) {
                         if (ins.OpCode == OpCodes.Ldstr && ldstrMap.Count > 0) {
-                            uint ltok = ins.Operand is uint ? (uint)ins.Operand : 0;
+                            uint slt = ins.Operand is uint ? (uint)ins.Operand : 0;
                             string lit;
-                            if (ltok != 0 && ldstrMap.TryGetValue(ltok, out lit)) {
+                            if (slt != 0 && ldstrMap.TryGetValue(slt, out lit)) {
                                 ins.Operand = lit;
                                 ldstrRebound++;
                             }

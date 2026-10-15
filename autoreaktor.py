@@ -460,9 +460,21 @@ def main():
                         trial_logs = []
                         for bname, bpath in bases:
                             tout = outdir / (src.stem + "_nb_" + bname + src.suffix)
+                            tenv = None
+                            if bname == "slayer":
+                                # slayer can shift rids and rename symbols —
+                                # translate original dump tokens via a map
+                                # (symbol match + entry-point anchor)
+                                mapf = outdir / "tokmap.txt"
+                                run_stage([str(nb_tools["merge_exe"]), "map",
+                                           str(base), str(bpath), str(mapf)],
+                                          cwd=work, timeout=300)
+                                if mapf.exists():
+                                    tenv = dict(os.environ)
+                                    tenv["NB_TOKENMAP"] = str(mapf)
                             rc2, out2, dur2 = run_stage([sys.executable, str(nb_tools["auto_stubmap"]),
                                                          str(bpath), str(ddir), str(tout)],
-                                                        cwd=work, timeout=900)
+                                                        cwd=work, timeout=900, env=tenv)
                             m = re.search(r"method actually written:\s*(\d+)", out2)
                             mres = int(m.group(1)) if m else -1
                             trial_logs.append({"base": bname, "rc": rc2, "restored": mres,
