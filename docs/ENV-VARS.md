@@ -10,12 +10,17 @@ unset = feature off / default path.
 |---|---|---|
 | `NB_DLL` | — (required) | Full path of `clrjit_dump32/64.dll`; set by `nbjitdump.py`, read by `nbjit_launch.exe`. |
 | `JITDUMP_DIR` | `.` | Dump output directory for `m_*.bin` / `m_*.eh` / `marker.txt` / `jitdump.log`. |
+| `NB_SCOPE_DIRS` | off | `1` (set by `nbjitdump.py`) = bodies are grouped into `scope<N>/` subdirectories, one per owning CLR module. The merge consumes only the target's dir, so framework/companion JIT can never collide on MethodDef rids. |
 | `NB_TOKENMODE` | auto | `vt` = resolve the real MethodDef token through the `getMethodDefFromMethod` vtable slot; otherwise chunk-derived offset read (x86: `+0x0C`, x64: `+0x14`). |
 | `NB_VTSLOT` | `112` | Vtable slot used when `NB_TOKENMODE=vt`. Runtime-dependent — see "slot discovery" below. |
 | `NB_EHSLOT` | off | Vtable slot of `ICorJitInfo::getEHinfo`. When set, the hook captures every method's exception clauses during the original compile and writes `m_XXXXXXXX.eh` next to the body (`[u32 count][count x 28-byte clause]`). `nbilmerge` reattaches them on write-back. |
 | `NB_STRSLOT` | `118` | Vtable slot of `getStringLiteral` (CoreCLR .NET 8 count; Framework differs). Only read when `NB_STRDUMP=1`. |
 | `NB_STRDUMP` | off | `1` = dump ldstr literal contents to `us_XXXXXX.txt` while bodies compile. SEH-guarded, but a wrong slot can destabilize some hosts — default off. |
 | `NB_NOINLINE` | off | `1` = `nbjitdump.py` exports `COMPlus_JitNoInline=1` so tiny methods JIT as separate entries instead of being inlined into ctors. |
+
+Design note: module filtering by probing vtable slots at runtime was tried and
+rejected — wrong-slot calls corrupt live JIT state and kill the process. Scope
+grouping achieves the same isolation with pointer bookkeeping only.
 
 ### Vtable slot discovery
 

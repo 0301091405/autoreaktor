@@ -32,7 +32,7 @@ python autoreaktor.py <dir> --hunt       # same classification, writes _ar_out/h
 python autoreaktor.py <dir|file> --deep  # full chain, per-file report.json
 ```
 
-`--deep` runs the full chain per file: de4dot → NETReactorSlayer → runnable-probe → Krypton (VM) → NecroBit JIT recovery. Stage 4 launches suspected protected targets under the clrjit hook, dumps the decrypted bodies (+ exception clauses) and writes them back via `nbilmerge` — hook DLLs and the merger are built on demand (MSVC required). Pass `--no-nb` to skip it; every outcome lands in `report.json`, including what was NOT recovered.
+`--deep` runs the full chain per file: de4dot → NETReactorSlayer → runnable-probe → Krypton (VM) → NecroBit JIT recovery (+ VM devirtualization of the recovered binary). Stage 4 launches suspected protected targets under the clrjit hook with the `--force` companion — every resolvable MethodDef is JIT'd and dumped, not just the ones the target executes — and writes the bodies back via `nbilmerge`; hook DLLs, the companion and the merger are built on demand (MSVC + .NET SDK required). Pass `--no-nb` to skip it; every outcome lands in `report.json`, including what was NOT recovered.
 
 The report records every stage's exit code, the hashes in and out, and the verification result — including what was NOT recovered. No stage failure is masked.
 
@@ -74,10 +74,11 @@ If your own target needs NecroBit body recovery instead, stage 4 handles it in t
 
 Static strippers fail on modern NecroBit because the CIL bodies never exist decrypted on disk: `MethodDef.RVA` points at a decoy stub, and the real body is only assembled in memory at JIT time. The route that does not race the packer:
 
-1. `v3/jitdump/clrjit_hook.cpp` — VMT hook on `ICorJitCompiler::compileMethod`, injected at process start. With `NB_EHSLOT` set it also hooks the `getEHinfo` vtable slot and captures each method's exception clauses (`m_*.eh`).
+1. `v3/jitdump/clrjit_hook.cpp` — VMT hook on `ICorJitCompiler::compileMethod`, injected at process start. With `NB_EHSLOT` set it also hooks the `getEHinfo` vtable slot and captures each method's exception clauses (`m_*.eh`). With `NB_SCOPE_DIRS=1` bodies are grouped per owning CLR module, so foreign JIT never mixes into the target's dump.
 2. `v3/jitdump/nbjit_launch.c` — suspended `CreateProcess` + `QueueUserAPC(LoadLibraryA)` launcher (built per-target bitness).
-3. `v3/jitdump/nbjitdump.py` — orchestrator: detects the target's machine type, builds the matching launcher (MSVC discovered via `v3/jitdump/msvc_env.py` — no hardcoded versions), runs it, collects the bodies.
-4. `v3/jitdump/nbilmerge.cs` — write-back: merges dumped bodies into a module dnSpy/ILSpy can open, reattaches the captured EH clauses and binds every local instruction to its true index from a raw-IL scan.
+3. `v3/jitdump/nbjitdump.py` — orchestrator: detects the target's machine type, builds the matching launcher (MSVC discovered via `v3/jitdump/msvc_env.py` — no hardcoded versions), runs it, collects the bodies. `--force` runs the companion below instead of a bare run.
+4. `v3/forcedump/` — force-JIT companion: loaded into the hooked process, it runs the module initializers (anti-tamper init completes clean), then `RuntimeHelpers.PrepareMethod`-walks every resolvable MethodDef. The dump stops depending on what the target happens to execute — one pass covers everything the runtime can JIT.
+5. `v3/jitdump/nbilmerge.cs` — write-back: merges dumped bodies into a module dnSpy/ILSpy can open, reattaches the captured EH clauses and binds every local instruction to its true index from a raw-IL scan. `auto_stubmap.py` trial-merges each scope dir and keeps the strongest write count.
 
 There is no key-derivation emulation, no per-version offset tables — the pipeline takes the bodies at the moment the runtime itself hands them to the JIT, so it is structurally immune to Reactor version bumps that break static decrypters.
 
@@ -96,19 +97,32 @@ Running Krypton directly on the original breaks its resource parser.
 Documented in the READMEs, measured on real targets, no inflation:
 
 - **RVA=0 NecroBit methods cannot be written back into the PE** — the body only exists in JIT-decrypted memory, and any metadata rewrite trips the runtime anti-tamper CRC. On this class the deliverable is: original exe + JIT-dumped bodies + an analysis PE with all bodies inlined for decompilation.
-- **Code Virtualization** methods never pass `compileMethod` as IL — that layer stays with Krypton, and only the protection-method subset is reliably devirtualized.
-- **Coverage** is bounded by what the process JITs during the dump window; a GUI driver (`v3/jitdump/jitdrive.py`) grows it but 100% on arbitrary targets is not guaranteed.
+- **Code Virtualization** methods never pass `compileMethod` as IL — that layer stays with Krypton, and stage 4b now applies it directly to the recovered binary (one file through NecroBit recovery AND VM devirtualization; the `krypton-on-merged` report stage).
+- **Coverage**: with `--force`, the dump is a `PrepareMethod` walk over every resolvable MethodDef — no longer bounded by what the target executes. The remaining limit is bodies the runtime refuses to prepare (open generics need an instantiation). `v3/jitdump/jitdrive.py` stays for GUI-behavior proof passes.
+- **Scope separation**: process-wide JIT (framework, the companion itself) lands in its own `scope*/` dir per CLR module; `auto_stubmap` trial-merges each and keeps the strongest write count, so foreign rids can never bind into the target.
 - Demo-packed binaries older than 14 days refuse to run (Eziriz demo timer) — neutralize the timer check first.
 - **Ordering on all-flags 7.5 builds**: running `nbrebuild` directly on the packed file can produce a module that throws `BadImageFormatException` at load. Run the `nbfixctor2` ctor repair first (`NB_V50=1`), then `nbrebuild`; the combined output launches clean (verified T+8s with GUI on the all-flags target in `v3/multi-target/T-MATRIX.md`).
 - **Runtime slot hooks** (`NB_EHSLOT`, `NB_STRSLOT`, `NB_VTSLOT`) are vtable-slot indices that vary across CLR builds — they default to safe/off values and every one is documented with its discovery recipe in `docs/ENV-VARS.md`.
+
+## Machinery self-test
+
+The unpacking machinery is CI-enforced with zero protected inputs — no license, no sample, no trust required:
+
+```
+python tools/selftest.py     # build target → build hook → force-dump → scope merge
+```
+
+The GitHub workflow runs the same script on every push (the `selftest` job): if the hook stops installing or bodies stop reaching disk, the repo goes red, not silent.
 
 ## Repo layout
 
 | Path | Purpose |
 |---|---|
-| `autoreaktor.py`, `hunt.py` | pipeline entry (stage 4 included), target classification |
+| `autoreaktor.py`, `hunt.py` | pipeline entry (stage 4 + 4b included), target classification |
 | `tools/setup.sh` | fetch third-party dependencies (not committed) |
+| `tools/selftest.py` | end-to-end machinery proof, runs in CI |
 | `v3/jitdump/` | JIT-entry NecroBit recovery (hook, launcher, orchestrator, merge) |
+| `v3/forcedump/` | force-JIT full-coverage companion |
 | `v3/nbdump.py`, `v3/nbwalk/`, `v3/nbrebuild/` | NecroBit reflection harvest + call-site rebuild |
 | `v3/nagstrip/` | nag/tamper/ctor repair tools |
 | `verify_target/`, `proof_loader/` | pack-and-verify harness (own binaries only) |
