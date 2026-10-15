@@ -126,7 +126,7 @@ hidden. First published grid (7.5.0.0 demo, all cells full flags):
 | cell | result | restored | runnable |
 |---|---|---|---|
 | console net48 x86 | run-recovered | 220 | yes |
-| console net48 x64 | slayer-clean | — | no |
+| console net48 x64 | necrobit-recovered | 220/386 | no (stage-5 x64 iterations open) |
 | console net8 (anycpu) | slayer-clean | 230 | no |
 | console + generics/delegates net48 x86 | run-recovered | 221 | yes |
 | WinForms net48 x86 | slayer-clean | 225 | no |
