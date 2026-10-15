@@ -19,7 +19,7 @@ For a target protected with Reactor 7.x (NecroBit + anti-tamper + obfuscation), 
 ```
 git clone https://github.com/0301091405/autoreaktor.git
 cd autoreaktor
-tools/setup.sh        # fetches dnlib, de4dotEx, NETReactorSlayer, Krypton
+tools/setup.sh        # fetches de4dotEx, NETReactorSlayer, Krypton
 ```
 
 Requirements: Windows with .NET Framework 4.8 (targets are WinForms-era), Python 3.8+, the .NET SDK (C# tools + Krypton), and MSVC BuildTools with a Windows SDK for stage 4 — the JIT hook DLLs and the merger are built automatically on the first protected target (`v3/jitdump/msvc_env.py` discovers the toolchain; no hardcoded paths).
