@@ -95,7 +95,8 @@ static class ForceDump
             }
         }
 
-        int prepared = 0, failed = 0, skipped = 0, ehWritten = 0;
+        int prepared = 0, failed = 0, skipped = 0, ehWritten = 0, dumped = 0;
+        var manifest = new System.Collections.Generic.List<int[]>();
         foreach (Type t in types)
         {
             if (t == null) { skipped++; continue; }
@@ -126,6 +127,32 @@ static class ForceDump
                     // 28B: flags, tryOff, tryLen, hOff, hLen, classTok,
                     // filterOff]. Managed option enums map 1:1 except Fault
                     // (4 managed -> 3 CORINFO).
+                    var ilBytes = body.GetILAsByteArray();
+                    manifest.Add(new int[] { m.MetadataToken, ilBytes.Length });
+                    // Dump the decoded body under its REAL MethodDef token —
+                    // the JIT hook's x86 token reads can be unreliable on
+                    // fresh MethodDescs, but this reflection view IS the
+                    // decoded body (proven: ilSize multiset matches the hook
+                    // dump on NecroBit 7.5.0.0). Same 20-byte header the
+                    // hook writes, so nbilmerge consumes both unchanged.
+                    string bdir = Environment.GetEnvironmentVariable("JITDUMP_DIR");
+                    if (!string.IsNullOrEmpty(bdir) && ilBytes.Length > 0)
+                    {
+                        try
+                        {
+                            var bout = new byte[20 + ilBytes.Length];
+                            Put(bout, 0, (uint)m.MetadataToken);
+                            Put(bout, 4, (uint)ilBytes.Length);
+                            Put(bout, 8, (uint)body.MaxStackSize);
+                            Put(bout, 12, (uint)body.ExceptionHandlingClauses.Count);
+                            Put(bout, 16, 0);
+                            Array.Copy(ilBytes, 0, bout, 20, ilBytes.Length);
+                            File.WriteAllBytes(Path.Combine(bdir,
+                                "m_" + m.MetadataToken.ToString("X8") + ".bin"), bout);
+                            dumped++;
+                        }
+                        catch { }
+                    }
                     var clauses = body.ExceptionHandlingClauses;
                     if (clauses.Count > 0)
                     {
@@ -183,7 +210,25 @@ static class ForceDump
 
         Console.WriteLine("[fd] done: prepared=" + prepared +
                           " failed=" + failed + " skipped=" + skipped +
-                          " eh=" + ehWritten);
+                          " eh=" + ehWritten + " dumped=" + dumped);
+        try
+        {
+            string mdir = Environment.GetEnvironmentVariable("JITDUMP_DIR");
+            if (!string.IsNullOrEmpty(mdir))
+            {
+var sb = new System.Text.StringBuilder("{\"methods\":[");
+                for (int i = 0; i < manifest.Count; i++)
+                {
+                    if (i > 0) sb.Append(',');
+sb.Append("{\"token\":").Append(manifest[i][0])
+.Append(",\"ilSize\":").Append(manifest[i][1]).Append('}');
+                }
+                sb.Append("]}");
+                File.WriteAllText(Path.Combine(mdir, "manifest.json"), sb.ToString());
+                Console.WriteLine("[fd] manifest: " + manifest.Count + " methods");
+            }
+        }
+        catch (Exception me) { Console.WriteLine("[fd] manifest failed: " + me.Message); }
         return 0;
     }
 }

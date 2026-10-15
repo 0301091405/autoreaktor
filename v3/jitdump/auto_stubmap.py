@@ -77,6 +77,10 @@ def main():
     scope_dirs = sorted(glob.glob(os.path.join(dumpdir, 'scope*')))
     scope_dirs = [d for d in scope_dirs
                   if os.path.isdir(d) and glob.glob(os.path.join(d, 'm_*.bin'))]
+    # the forcedump companion writes REAL-token bodies at the dump root —
+    # those bind best, so the root goes first in the trial order
+    if glob.glob(os.path.join(dumpdir, 'm_*.bin')):
+        scope_dirs = [dumpdir] + scope_dirs
     if not scope_dirs:
         scope_dirs = [dumpdir]   # legacy flat dump
 
