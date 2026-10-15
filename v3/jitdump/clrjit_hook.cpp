@@ -7,6 +7,7 @@
 #include <Windows.h>
 #include <cstdint>
 #include <cstdio>
+#include <map>
 #include <mutex>
 #include <set>
 #include <string>
@@ -44,7 +45,7 @@ typedef void* (__stdcall* GetJitFn)();
 static GetJitFn g_getJit = nullptr;
 static void* g_origCompile = nullptr;
 static std::mutex g_mtx;
-static std::set<std::uint64_t> g_seen;
+static std::map<int, std::set<std::uint64_t>> g_seen;   // per-scope dedup
 static std::set<std::uint32_t> g_ldstrSeen;
 static char g_outDir[MAX_PATH] = "";
 static std::vector<std::string> g_lines;
@@ -59,6 +60,32 @@ static bool g_ehHookAttempted = false;
 static std::uint32_t g_ehSlot = 0;
 static thread_local void* t_curInfo = nullptr;
 static thread_local std::vector<CORINFO_EH_CLAUSE> t_curEh;
+
+// Scope grouping (NB_SCOPE_DIRS=1): every distinct info->scope (one CLR
+// module each) gets its own subdirectory, so ONLY the target module's
+// bodies land in the dir the merge consumes. Foreign JIT (mscorlib, the
+// companion itself) is physically separated — its MethodDef rids would
+// otherwise collide with the target's. Grouping is pure pointer bookkeeping:
+// no vtable probing, nothing foreign is ever called.
+typedef const char* (__stdcall* ModNameFn)(void* scope);
+static bool g_scopeDirs = false;
+static std::mutex g_scope_mtx;
+static std::map<void*, int> g_scopeIdx;
+static int g_scopeCount = 0;
+
+static int ScopeIndexFor(void* scope) {
+    std::lock_guard<std::mutex> lk(g_scope_mtx);
+    auto it = g_scopeIdx.find(scope);
+    if (it != g_scopeIdx.end()) return it->second;
+    int idx = g_scopeCount++;
+    g_scopeIdx[scope] = idx;
+    char mp[MAX_PATH]; char msg[96];
+    std::snprintf(msg, sizeof(msg), "scope%d = %p", idx, scope);
+    std::snprintf(mp, sizeof(mp), "%s\\scopes.log", g_outDir);
+    FILE* f = nullptr;
+    if (fopen_s(&f, mp, "ab") == 0) { fputs(msg, f); fputc('\n', f); fclose(f); }
+    return idx;
+}
 
 // getMethodDefFromMethod vtable index: Framework 4.x x86 offset-read is
 // proven; x64 uses vtable (NB_TOKENMODE=vt) or chunk-derived synthetic.
@@ -217,6 +244,7 @@ static int __stdcall HookedCompileMethod(
     if (g_origEH && preEh > 0)
         t_curInfo = info;   // getEHinfo's first arg is this same METHOD_INFO*
 
+
     int r = ((CompileFn)g_origCompile)(self, comp, info, flags, nativeEntry, nativeSize);
 
     std::vector<CORINFO_EH_CLAUSE> ehOut;
@@ -228,11 +256,19 @@ static int __stdcall HookedCompileMethod(
     if (!pre.empty()) {
         std::uint32_t real = resolveRealToken(comp, preFtn);
         std::uint32_t tok = real ? real : ++g_tokCounter;
+        int scopeIdx = g_scopeDirs ? ScopeIndexFor(info->scope) : -1;
+        char dir[MAX_PATH];
+        if (scopeIdx >= 0) {
+            std::snprintf(dir, sizeof(dir), "%s\\scope%d", g_outDir, scopeIdx);
+            CreateDirectoryA(dir, NULL);   // NO_ERROR / ALREADY_EXISTS both fine
+        } else {
+            strcpy_s(dir, sizeof(dir), g_outDir);
+        }
         std::lock_guard<std::mutex> lk(g_mtx);
         std::uint64_t key = (std::uint64_t)tok << 32 | preIl;
-        if (g_seen.insert(key).second) {
+        if (g_seen[scopeIdx].insert(key).second) {
             char path[MAX_PATH];
-            std::snprintf(path, sizeof(path), "%s\\m_%08X.bin", g_outDir, tok);
+            std::snprintf(path, sizeof(path), "%s\\m_%08X.bin", dir, tok);
             FILE* f = nullptr;
             if (fopen_s(&f, path, "wb") == 0 && f) {
                 std::uint32_t hdr[5] = { tok, preIl, preMaxStack, preEh, 0 };
@@ -245,7 +281,7 @@ static int __stdcall HookedCompileMethod(
                 // always asks for all EHcount clauses of a method it compiles.
                 if (!ehOut.empty()) {
                     char epath[MAX_PATH];
-                    std::snprintf(epath, sizeof(epath), "%s\\m_%08X.eh", g_outDir, tok);
+                    std::snprintf(epath, sizeof(epath), "%s\\m_%08X.eh", dir, tok);
                     FILE* fe = nullptr;
                     if (fopen_s(&fe, epath, "wb") == 0 && fe) {
                         std::uint32_t cnt = (std::uint32_t)ehOut.size();
@@ -255,9 +291,9 @@ static int __stdcall HookedCompileMethod(
                     }
                 }
                 std::lock_guard<std::mutex> lk2(g_lines_mtx);
-                char line[160];
-                std::snprintf(line, sizeof(line), "token=0x%08X il=%u maxStack=%u eh=%u%s PRE",
-                               tok, preIl, preMaxStack, preEh,
+                char line[180];
+                std::snprintf(line, sizeof(line), "scope=%d token=0x%08X il=%u maxStack=%u eh=%u%s PRE",
+                               scopeIdx, tok, preIl, preMaxStack, preEh,
                                ehOut.empty() ? "" : "+captured");
                 g_lines.push_back(line);
             }
@@ -308,6 +344,12 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID) {
         DisableThreadLibraryCalls(h);
         if (!GetEnvironmentVariableA("JITDUMP_DIR", g_outDir, sizeof(g_outDir)))
             strcpy_s(g_outDir, ".");
+        {
+            char sd[8];
+            if (GetEnvironmentVariableA("NB_SCOPE_DIRS", sd, sizeof(sd)) &&
+                strcmp(sd, "1") == 0)
+                g_scopeDirs = true;
+        }
         // v5 race fix: x86 Framework targets finish their startup JIT burst
         // before the 100ms deferred loop lands (dotqw proof: HOOK-OK but
         // 0 bodies, GUI alive — every method compiled pre-hook). Try a

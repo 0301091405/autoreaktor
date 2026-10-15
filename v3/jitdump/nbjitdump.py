@@ -122,11 +122,56 @@ def build_launcher(arch, out_dir):
     return launcher
 
 
+def is_core_runtime(path):
+    """True when the managed module targets .NET Core/5+. A Framework
+    assembly ALWAYS TypeRefs 'mscorlib'; Core assemblies reference
+    'System.Runtime' (CoreLib itself rarely appears by name in a compiled
+    app's #Strings). Picks the forcedump flavor."""
+    try:
+        with open(path, "rb") as f:
+            d = f.read(262144)
+    except OSError:
+        return False
+    if b"mscorlib" in d:
+        return False
+    return b"System.Runtime" in d or b"System.Private.CoreLib" in d
+
+
+def build_forcedump(arch, flavor, out_dir):
+    """Build the forcedump companion in the target's bitness and TFM.
+
+    forcedump runs INSIDE the hooked process and PrepareMethod-walks every
+    resolvable MethodDef, so its process bitness must match the hook DLL
+    (x86 targets -> x86 forcedump) and its runtime must match the target's
+    (Core targets -> net8.0 flavor)."""
+    exe = out_dir / f"forcedump_{arch}_{flavor}" / "forcedump.exe"
+    if exe.exists():
+        return exe
+    proj = HERE.parent / "forcedump" / "forcedump.csproj"
+    if not proj.exists():
+        print("[!] forcedump projesi yok")
+        return None
+    r = subprocess.run(
+        ["dotnet", "build", str(proj), "-c", "Release", "-f", flavor,
+         "-p:PlatformTarget=" + ("x86" if arch == "x86" else "x64"),
+         "-o", str(exe.parent), "--nologo", "-v", "q"],
+        capture_output=True, cwd=str(HERE))
+    if r.returncode != 0 or not exe.exists():
+        print((r.stdout or b"").decode("utf-8", "replace")[-400:])
+        print((r.stderr or b"").decode("mbcs", "replace")[-400:])
+        return None
+    return exe
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("target")
     ap.add_argument("--out", default=None)
     ap.add_argument("--wait", type=int, default=30)
+    ap.add_argument("--force", action="store_true",
+                    help="force-JIT every resolvable MethodDef (forcedump companion) "
+                         "instead of a bare run — coverage stops depending on what the "
+                         "target happens to execute")
     ap.add_argument("--force-run", action="store_true",
                     help="still accept the dump early in GUI targets")
     args = ap.parse_args()
@@ -172,9 +217,14 @@ def main():
     if not launcher:
         print("[!] launcher derlenemedi"); return 1
 
+    core = is_core_runtime(tgt)
+    flavor = "net8.0" if core else "net48"
+
     env = dict(os.environ)
     env["NB_DLL"] = str(dll)
     env["JITDUMP_DIR"] = str(out)
+    env["NB_SCOPE_DIRS"] = "1"   # group bodies per owning module — the merge
+                                 # consumes the target's scope dir only
     # tiered-inline breaker: small methods like Magic drop into the dump as
     # separate JIT entries instead of being inlined into the ctor (g5). Active with NB_NOINLINE=1.
     if os.environ.get("NB_NOINLINE") == "1":
@@ -182,7 +232,9 @@ def main():
         print("[info] COMPlus_JitNoInline=1 — tiered inline disabled")
     # calistirilabilir sec: target .dll ise apphost .exe'sini bul
     run_tgt = tgt
-    if tgt.suffix.lower() == ".dll":
+    if tgt.suffix.lower() == ".dll" and not args.force:
+        # bare run needs a host; --force does not (forcedump loads the
+        # managed module bytes itself, apphost or not)
         host = tgt.with_suffix(".exe")
         if host.exists():
             run_tgt = host.resolve()
@@ -190,14 +242,27 @@ def main():
         else:
             print("[!] no apphost exe for DLL — dotnet host required")
             return 3
-    p = subprocess.Popen([str(launcher), f'"{str(run_tgt)}"'], cwd=str(tgt.parent), env=env)
+    kill_name = run_tgt.name
+    if args.force:
+        fd = build_forcedump(arch, flavor, out)
+        if fd:
+            print(f"[info] forcedump: {fd.name} ({arch}, {flavor})")
+            kill_name = fd.name
+            # the MANAGED module is the payload — never the apphost stub
+            run_cmd = f'"{fd}" "{tgt}"'
+        else:
+            print("[!] forcedump derlenemedi — bare run'a düşülüyor")
+            run_cmd = f'"{run_tgt}"'
+    else:
+        run_cmd = f'"{run_tgt}"'
+    p = subprocess.Popen([str(launcher), run_cmd], cwd=str(tgt.parent), env=env)
     try:
         p.wait(timeout=args.wait)
         print(f"target exited rc={p.returncode}")
     except subprocess.TimeoutExpired:
-        # kill by the RUNNING image name (run_tgt, not tgt: after the apphost
-        # route tgt is the managed DLL, which never matches a process image)
-        subprocess.run(["taskkill", "/IM", run_tgt.name, "/F"], capture_output=True)
+        # kill by the RUNNING image name (the apphost route swaps tgt to the
+        # managed DLL, and --force swaps it to the forcedump companion)
+        subprocess.run(["taskkill", "/IM", kill_name, "/F"], capture_output=True)
         p.kill()
         try:
             p.wait(timeout=10)
@@ -206,8 +271,11 @@ def main():
         print(f"target {args.wait}s sonunda disabled (GUI yasar — normal)")
 
     time.sleep(1)
-    bins = sorted(out.glob("m_*.bin"))
-    ehs = sorted(out.glob("m_*.eh"))
+    bins = sorted(out.glob("scope*/m_*.bin")) or sorted(out.glob("m_*.bin"))
+    ehs = sorted(out.glob("scope*/m_*.eh")) or sorted(out.glob("m_*.eh"))
+    scopes = sorted(out.glob("scope*"))
+    for sc in scopes:
+        print(f"[info] {sc.name}: {len(list(sc.glob('m_*.bin')))} body")
     marker = out / "marker.txt"
     log = out / "jitdump.log"
     hooked = marker.exists() and "HOOK-OK" in marker.read_text(errors="replace")
