@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""autoreaktor.py v3.1 — the Reactor pipeline.
+"""autoreaktor.py v3.2 — the Reactor pipeline.
 
 Stage 0  hunt       — classify .NET assemblies (clean/carrier/runtime/protected)
 Stage 1  de4dot     — partial cleanup (kept as fallback candidate)
@@ -16,6 +16,16 @@ Stage 4  NecroBit   — JIT-entry body recovery: launch under the clrjit hook,
 Usage:
   python autoreaktor.py <dir|file> [--dry-run] [--deep] [--keep-work]
                         [--hunt] [--no-nb]
+
+v3.2 changes:
+- Stage 4 runs the forcedump companion (--force): a PrepareMethod walk forces
+  every resolvable MethodDef through the hooked JIT, so dump coverage no
+  longer depends on what the target executes. Bodies are grouped per owning
+  CLR module (NB_SCOPE_DIRS) and auto_stubmap trial-merges each scope dir,
+  keeping the strongest write count - foreign rids can never bind.
+- Stage 4b: Krypton devirtualization runs directly on the recovered binary
+  (one file through NecroBit recovery AND VM - the v3.x roadmap item).
+- Coverage numbers land in report.json (bodies, module_methods, restored).
 
 v3.1 changes:
 - Stage 4 wired into the chain: NecroBit recovery is no longer a manual
@@ -45,7 +55,7 @@ import threading
 import time
 from pathlib import Path
 
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 ROOT = Path(__file__).resolve().parent
 TOOLS = ROOT / "tools"
 MARKERS = (b"Eziriz", b".NET Reactor")
@@ -410,11 +420,18 @@ def main():
                     entry["stages"].append(nb)
                 else:
                     ddir = work / "jitdump"
+                    # --force: the forcedump companion PrepareMethod-walks every
+                    # resolvable MethodDef inside the hooked process, so dump
+                    # coverage no longer depends on what the target executes.
+                    # Falls back to a bare run when the companion cannot build.
                     rc, out, dur = run_stage([sys.executable, str(nb_tools["nbjitdump"]),
-                                              str(base), "--out", str(ddir), "--wait", "30"],
-                                             cwd=work, timeout=300)
-                    bins = sorted(ddir.glob("m_*.bin")) if ddir.exists() else []
-                    ehs = sorted(ddir.glob("m_*.eh")) if ddir.exists() else []
+                                              str(base), "--out", str(ddir),
+                                              "--force", "--wait", "120"],
+                                             cwd=work, timeout=900)
+                    bins = (sorted(ddir.glob("scope*/m_*.bin")) or sorted(ddir.glob("m_*.bin"))) \
+                        if ddir.exists() else []
+                    ehs = (sorted(ddir.glob("scope*/m_*.eh")) or sorted(ddir.glob("m_*.eh"))) \
+                        if ddir.exists() else []
                     marker = ddir / "marker.txt"
                     hooked = marker.exists() and "HOOK-OK" in marker.read_text(errors="replace")
                     nb.update({"rc": rc, "secs": round(dur, 1), "hook": hooked,
@@ -427,11 +444,15 @@ def main():
                         outexe = outdir / (src.stem + "_nbmerged" + src.suffix)
                         rc2, out2, dur2 = run_stage([sys.executable, str(nb_tools["auto_stubmap"]),
                                                      str(base), str(ddir), str(outexe)],
-                                                    cwd=work, timeout=600)
+                                                    cwd=work, timeout=900)
                         m = re.search(r"method actually written:\s*(\d+)", out2)
                         mrestored = int(m.group(1)) if m else None
+                        mm = re.search(r"modul MethodDef:\s*(\d+)", out2)
+                        module_methods = int(mm.group(1)) if mm else None
                         entry["stages"].append({"stage": "necrobit-merge", "rc": rc2,
-                                                "restored": mrestored, "secs": round(dur2, 1),
+                                                "restored": mrestored,
+                                                "module_methods": module_methods,
+                                                "secs": round(dur2, 1),
                                                 "log_tail": out2[-600:]})
                         if outexe.exists():
                             entry["necrobit_output"] = str(outexe)
@@ -445,6 +466,27 @@ def main():
                                 entry["result"] = "necrobit-recovered"
                             elif entry["result"] == "incomplete":
                                 entry["result"] = "necrobit-partial"
+                            # ---- stage 4b: VM devirtualization ON the recovered
+                            # binary (the v3.x roadmap item: one binary through
+                            # NecroBit recovery AND VM devirtualization)
+                            if krypton:
+                                kdir2 = outdir / "krypton"
+                                kdir2.mkdir(exist_ok=True)
+                                mname = outexe.name
+                                shutil.copy2(outexe, kdir2 / mname)
+                                rc3, out3, dur3 = run_stage([krypton, mname, "--no-pause"],
+                                                            cwd=kdir2, timeout=1800)
+                                rec2 = out3.count("Recompiled method body")
+                                stage4b = {"stage": "krypton-on-merged", "rc": rc3,
+                                           "secs": round(dur3, 1),
+                                           "vm_methods_recompiled": rec2,
+                                           "log_tail": out3[-400:]}
+                                dev2 = sorted(kdir2.glob("*Devirtualized*.exe"))
+                                if dev2:
+                                    entry["necrobit_vm_output"] = str(dev2[0])
+                                    entry["sha256_necrobit_vm_output"] = sha256(dev2[0])
+                                    stage4b["output"] = str(dev2[0])
+                                entry["stages"].append(stage4b)
                         else:
                             if entry["result"] == "incomplete":
                                 entry["result"] = "necrobit-dumped"
