@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""autoreaktor.py v3.0 — the Reactor pipeline.
+"""autoreaktor.py v3.1 — the Reactor pipeline.
 
 Stage 0  hunt       — classify .NET assemblies (clean/carrier/runtime/protected)
 Stage 1  de4dot     — partial cleanup (kept as fallback candidate)
@@ -8,34 +8,44 @@ Stage 2b probe      — Slayer output is RUNNABLE-PROBED; if it crashes
                       (interceptor/cctor breakage class), the de4dot-cleaned
                       output is promoted as the runnable candidate (fallback)
 Stage 3  Krypton    — VM devirtualization ON THE SLAYED OUTPUT
+Stage 4  NecroBit   — JIT-entry body recovery: launch under the clrjit hook,
+                      dump the decrypted bodies (+EH clauses), write them back
+                      with nbilmerge (token-precise route). Runs on suspected
+                      protected targets; disable with --no-nb.
 
 Usage:
   python autoreaktor.py <dir|file> [--dry-run] [--deep] [--keep-work]
+                        [--hunt] [--no-nb]
 
-v3.0 changes:
-- KRYPTON_FORCE_VM_MAP default pin REMOVED. VM opcode bytes are randomized
-  per protected build; the old "0x75=Call" default was a pin specific to the
-  Tuts4You 7.3 challenge and silently broke devirtualization on every other
-  build. Mapping is resolved by Krypton's own discovery pass; per-target
-  overrides remain possible by exporting the env var manually.
+v3.1 changes:
+- Stage 4 wired into the chain: NecroBit recovery is no longer a manual
+  detour. Hook DLLs and nbilmerge.exe are built on demand; every outcome
+  (hook fail, 0 bodies, merge counts, probe result) lands in report.json.
+- probe stage drains child pipes via reader threads (a chatty child filling
+  the OS pipe buffer used to block on write and masquerade as "alive"),
+  reaps the killed process, and records probe_executed honestly.
+- --hunt mode: classification-only pass writing hunt.json.
+- KRYPTON_FORCE_VM_MAP default pin REMOVED (v3.0): VM opcode bytes are
+  randomized per protected build; mapping is resolved by Krypton's own
+  discovery pass. Per-target overrides remain possible via the env var.
 - de4dot is no longer an idle step: its cleaned output is the verified
   fallback candidate (R5 class: Slayer breaks the CodeResolver cctor,
   de4dot-cleaned output runs, GUI-proven).
-- Slayer output runnable-probe: report.json now records
-  slayer_output_runnable + fallback_output honestly per target.
 """
 import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import struct
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
-VERSION = "2.1"
+VERSION = "3.1.0"
 ROOT = Path(__file__).resolve().parent
 TOOLS = ROOT / "tools"
 MARKERS = (b"Eziriz", b".NET Reactor")
@@ -136,17 +146,34 @@ def find_tool(name: str) -> str:
 def run_stage(cmd, cwd, timeout=600, env=None, probe=False):
     t0 = time.time()
     if probe:
-        # runnable-probe: launch, wait up to timeout, treat
-        # still-alive (None) as success (GUI apps block on purpose)
+        # runnable-probe: launch, wait up to timeout, treat still-alive as
+        # success (GUI apps block on purpose). Reader threads drain both
+        # pipes: a child that fills the OS pipe buffer would otherwise block
+        # on write and be misread as "still alive".
+        acc = []
         try:
             p = subprocess.Popen(cmd, cwd=str(cwd), env=env,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            def _drain(pipe):
+                try:
+                    acc.append(pipe.read() or b"")
+                except Exception:
+                    acc.append(b"")
+
+            th1 = threading.Thread(target=_drain, args=(p.stdout,), daemon=True)
+            th2 = threading.Thread(target=_drain, args=(p.stderr,), daemon=True)
+            th1.start(); th2.start()
             try:
                 rc = p.wait(timeout=timeout)
-                out = (p.stdout.read() or b"") + (p.stderr.read() or b"")
-                return rc, out.decode("utf-8", "replace"), time.time() - t0
+                th1.join(5); th2.join(5)
+                return rc, b"".join(acc).decode("utf-8", "replace"), time.time() - t0
             except subprocess.TimeoutExpired:
                 p.kill()
+                try:
+                    p.wait(timeout=10)
+                except Exception:
+                    pass
                 return None, "ALIVE", time.time() - t0
         except Exception as e:
             return 125, f"SPAWN-ERROR {e}", time.time() - t0
@@ -160,16 +187,50 @@ def run_stage(cmd, cwd, timeout=600, env=None, probe=False):
         return 125, f"SPAWN-ERROR {e}", time.time() - t0
 
 
+def necrobit_tools() -> dict:
+    jd = ROOT / "v3" / "jitdump"
+    return {
+        "dir": jd,
+        "dll32": jd / "clrjit_dump32.dll",
+        "dll64": jd / "clrjit_dump64.dll",
+        "build_hook": jd / "build_hook.py",
+        "nbjitdump": jd / "nbjitdump.py",
+        "auto_stubmap": jd / "auto_stubmap.py",
+        "merge_csproj": jd / "nbilmerge.csproj",
+        "merge_exe": jd / "bin" / "Release" / "nbilmerge.exe",
+    }
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser()
     ap.add_argument("target")
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--deep", action="store_true", help="run Slayer + Krypton stages")
+    ap.add_argument("--deep", action="store_true", help="run Slayer + Krypton + NecroBit stages")
     ap.add_argument("--keep-work", action="store_true")
+    ap.add_argument("--hunt", action="store_true", help="classification only, writes hunt.json")
+    ap.add_argument("--no-nb", action="store_true",
+                    help="skip stage 4 (NecroBit JIT recovery) even on suspected targets")
     args = ap.parse_args()
 
     tgt = Path(args.target).resolve()
+    outroot = tgt / "_ar_out" if tgt.is_dir() else tgt.parent / "_ar_out"
+
+    if args.hunt:
+        from hunt import hunt as hunt_dir
+        root = tgt if tgt.is_dir() else tgt.parent
+        results = hunt_dir(root)
+        counts = {}
+        for r in results:
+            counts[r["class"]] = counts.get(r["class"], 0) + 1
+            if r["class"] in ("carrier", "protected", "error"):
+                print(f"[{r['class']:>9}] {r['file']}")
+        outroot.mkdir(exist_ok=True)
+        (outroot / "hunt.json").write_text(json.dumps(results, indent=1), encoding="utf-8")
+        print(f"--- total: {len(results)} | " + " ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+        print(f"[*] hunt.json -> {outroot / 'hunt.json'}")
+        return 0
+
     files = []
     if tgt.is_dir():
         for p in sorted(tgt.rglob("*")):
@@ -190,8 +251,10 @@ def main():
         print(f"[*] krypton: {krypton or 'NOT FOUND (stage skipped)'}")
 
     report = {"version": VERSION, "files": []}
-    outroot = tgt / "_ar_out" if tgt.is_dir() else tgt.parent / "_ar_out"
     outroot.mkdir(exist_ok=True)
+
+    nb_tools = necrobit_tools()
+    nb_dlls_ok = None  # built lazily on the first suspected target
 
     for src in files:
         rel = src.name
@@ -213,6 +276,15 @@ def main():
         work.mkdir(parents=True)
         base = work / src.name
         shutil.copy2(src, base)
+        # The work dir must be RUNNABLE: the probe, nbjitdump's apphost route
+        # and the merged-output probe all launch the copied assembly, and a
+        # bare .dll copy has no host. Bring the sibling apphost + Core runtime
+        # config along when the target is a library.
+        if src.suffix.lower() == ".dll":
+            for pat in (src.stem + ".exe", src.stem + ".deps.json", src.stem + ".runtimeconfig.json"):
+                sib = src.parent / pat
+                if sib.exists():
+                    shutil.copy2(sib, work / sib.name)
 
         # ---- stage 1: de4dot (partial pre-clean, relative path invocation)
         de4dot = find_tool("de4dot.exe")
@@ -246,8 +318,9 @@ def main():
         # partial-cleaned output is the runnable candidate. Honest
         # fallback, verified on R5 where de4dot-cleaned GUI runs.
         if slayer_out:
+            entry["probe_executed"] = True
             fr_rc, fr_out, _ = run_stage([str(work / Path(slayer_out).name)],
-                                          cwd=work, timeout=60, probe=True)
+                                         cwd=work, timeout=60, probe=True)
             slayer_ok = fr_rc == 0 or fr_rc is None  # None = still alive = GUI blocking
             entry["slayer_output_runnable"] = bool(slayer_ok)
             if not slayer_ok:
@@ -300,6 +373,87 @@ def main():
         elif entry.get("slayer_output") and entry["result"] == "incomplete":
             entry["result"] = "slayer-clean"
 
+        # ---- stage 4: NecroBit JIT-entry recovery -------------------------
+        # The static chain cannot touch NecroBit method bodies. On suspected
+        # protected targets (Reactor marker, or Slayer produced nothing /
+        # produced something that does not run) launch under the clrjit hook,
+        # dump the decrypted bodies + EH clauses, and write them back through
+        # nbilmerge (token-precise route, auto_stubmap). THIS STAGE EXECUTES
+        # THE TARGET on the analyst machine — recorded in probe_executed.
+        nb_suspect = (bool(entry.get("reactor_marker"))
+                      or not entry.get("slayer_output")
+                      or entry.get("slayer_output_runnable") is False)
+        if args.deep and args.no_nb:
+            entry["stages"].append({"stage": "necrobit-jitdump", "status": "skipped",
+                                    "reason": "--no-nb"})
+        elif args.deep and nb_suspect and sys.platform == "win32":
+            entry["probe_executed"] = True
+            nb = {"stage": "necrobit-jitdump"}
+            if not (nb_tools["dll32"].exists() and nb_tools["dll64"].exists()):
+                rc, out, dur = run_stage([sys.executable, str(nb_tools["build_hook"])],
+                                         cwd=nb_tools["dir"], timeout=600)
+                nb["dll_build_rc"] = rc
+                nb["dll_build_log_tail"] = out[-400:]
+            if not (nb_tools["dll32"].exists() and nb_tools["dll64"].exists()):
+                nb["status"] = "skipped"
+                nb["reason"] = "clrjit_dump{32,64}.dll missing and build failed (MSVC/SDK absent?)"
+                entry["stages"].append(nb)
+            else:
+                if not nb_tools["merge_exe"].exists():
+                    rc, out, dur = run_stage(["dotnet", "build", str(nb_tools["merge_csproj"]),
+                                              "-c", "Release", "-v", "q", "--nologo"],
+                                             cwd=nb_tools["dir"], timeout=600)
+                    nb["merge_build_rc"] = rc
+                if not nb_tools["merge_exe"].exists():
+                    nb["status"] = "skipped"
+                    nb["reason"] = "nbilmerge.exe build failed"
+                    entry["stages"].append(nb)
+                else:
+                    ddir = work / "jitdump"
+                    rc, out, dur = run_stage([sys.executable, str(nb_tools["nbjitdump"]),
+                                              str(base), "--out", str(ddir), "--wait", "30"],
+                                             cwd=work, timeout=300)
+                    bins = sorted(ddir.glob("m_*.bin")) if ddir.exists() else []
+                    ehs = sorted(ddir.glob("m_*.eh")) if ddir.exists() else []
+                    marker = ddir / "marker.txt"
+                    hooked = marker.exists() and "HOOK-OK" in marker.read_text(errors="replace")
+                    nb.update({"rc": rc, "secs": round(dur, 1), "hook": hooked,
+                               "bodies": len(bins), "eh_tables": len(ehs),
+                               "log_tail": out[-600:]})
+                    entry["stages"].append(nb)
+                    if bins:
+                        outdir = work / "nbmerge"
+                        outdir.mkdir(exist_ok=True)
+                        outexe = outdir / (src.stem + "_nbmerged" + src.suffix)
+                        rc2, out2, dur2 = run_stage([sys.executable, str(nb_tools["auto_stubmap"]),
+                                                     str(base), str(ddir), str(outexe)],
+                                                    cwd=work, timeout=600)
+                        m = re.search(r"method actually written:\s*(\d+)", out2)
+                        mrestored = int(m.group(1)) if m else None
+                        entry["stages"].append({"stage": "necrobit-merge", "rc": rc2,
+                                                "restored": mrestored, "secs": round(dur2, 1),
+                                                "log_tail": out2[-600:]})
+                        if outexe.exists():
+                            entry["necrobit_output"] = str(outexe)
+                            entry["sha256_necrobit_output"] = sha256(outexe)
+                            entry["probe_executed"] = True
+                            prc, pout, _ = run_stage([str(outexe)], cwd=outdir,
+                                                     timeout=60, probe=True)
+                            nb_runnable = prc == 0 or prc is None
+                            entry["necrobit_output_runnable"] = bool(nb_runnable)
+                            if nb_runnable and entry["result"] in ("incomplete", "slayer-clean"):
+                                entry["result"] = "necrobit-recovered"
+                            elif entry["result"] == "incomplete":
+                                entry["result"] = "necrobit-partial"
+                        else:
+                            if entry["result"] == "incomplete":
+                                entry["result"] = "necrobit-dumped"
+                    elif entry["result"] == "incomplete":
+                        nb["status"] = "no-bodies"
+        elif args.deep:
+            entry["stages"].append({"stage": "necrobit-jitdump", "status": "skipped",
+                                    "reason": "target not suspected (no Reactor marker and slayer output ran)"})
+
         if not args.keep_work:
             shutil.rmtree(work, ignore_errors=True)
         report["files"].append(entry)
@@ -312,4 +466,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

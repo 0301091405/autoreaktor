@@ -23,12 +23,23 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 NBWALK = HERE / "nbwalk" / "bin" / "Release" / "net48" / "nbwalk.exe"
-# fall back to the sibling layout for checkouts where krypton lives
-# inside autoreaktor itself.
-_TOOLS = HERE.parent.parent / "tools"
-if not (_TOOLS / "krypton" / "Krypton.Runner" / "bin" / "Release" / "net48" / "Krypton.Runner.exe").exists():
-    _TOOLS = HERE.parent / "tools"
-RUNNER = _TOOLS / "krypton" / "Krypton.Runner" / "bin" / "Release" / "net48" / "Krypton.Runner.exe"
+
+
+def _find_runner():
+    """Krypton.Runner.exe under either tools/ layout, any TFM, newest first."""
+    bases = [HERE.parent.parent / "tools" / "krypton",      # repo/tools/krypton
+             HERE.parent / "tools" / "krypton"]             # v3/tools/krypton
+    for b in bases:
+        if not b.is_dir():
+            continue
+        hits = sorted(b.glob("Krypton.Runner/bin/Release/*/Krypton.Runner.exe"),
+                      key=lambda p: str(p), reverse=True)
+        if hits:
+            return hits[0]
+    return None
+
+
+RUNNER = _find_runner()
 
 
 def sh(cmd, cwd, timeout=240):

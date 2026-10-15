@@ -20,7 +20,22 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MERGE = os.path.join(HERE, 'nbilmerge.exe')
+
+
+def _find_merge():
+    """nbilmerge.exe: repo-root copy, dotnet build output, then HERE."""
+    cands = [
+        os.path.join(HERE, 'nbilmerge.exe'),
+        os.path.join(HERE, 'bin', 'Release', 'nbilmerge.exe'),
+        os.path.join(HERE, 'bin', 'Release', 'net48', 'nbilmerge.exe'),
+    ]
+    for c in cands:
+        if os.path.exists(c):
+            return c
+    return cands[0]
+
+
+MERGE = _find_merge()
 
 
 def build_pairs(dumpdir):

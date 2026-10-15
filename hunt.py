@@ -59,29 +59,20 @@ def necrobit_signature(path: Path) -> bool:
       Eziriz carrier dll  : 5.71 (has readable marker anyway)
       Reactor 7.5 strenc  : 6.23, file 11x bigger than plain
       Reactor 7.5 necrobit: 6.46, file 22x bigger
-    Decision boundary: max-window entropy >= 6.0 AND any .NET metadata stream
-    present AND file smaller than 2 MB (framework DLLs like mscorlib naturally
-    exceed this and are out of scope — the hunter is for application folders).
+    Decision boundary: single pass computes both the max-window entropy and
+    the hot-window ratio (windows >= 6.0); protected requires hot-ratio
+    >= 3%. Any .NET metadata stream must be present. The old 2 MB size cap
+    was removed: real-world protected application assemblies are frequently
+    larger, and detection is marker/ratio-based so size carries no signal.
     Carrier is caught earlier by the readable-marker check.
     """
     data = path.read_bytes()
     if len(data) < 512:
         return False
-    # size cap removed (was 2 MB): real-world Reactor-protected
-    # application assemblies are frequently larger than 2 MB — the
-    # cap silently skipped them. Detection below is marker-based,
-    # so size no longer matters for accuracy.
     has_clr_meta = b'#~' in data or b'#Strings' in data or b'#Blob' in data
     if not has_clr_meta:
         return False
-    # Marker-based NecroBit detection (structural, not entropy):
-    # Reactor NecroBit builds ship telltale structures:
-    #   1. BSJB present (CLR metadata) but MethodDef table bodies
-    #      are stubs -> tiny method-body RVAs vs large file
-    #   2. obfuscated name pool: many >=16-char identifiers with
-    #      no readable English words in #Strings
-    #   3. high-entropy window (kept as SECONDARY signal only)
-    # Primary: entropy >= 6.0 OR NecroBit structural stub ratio.
+    # single pass: max-window entropy + hot-window ratio (>= 6.0 each)
     def ent(b):
         if not b:
             return 0.0
@@ -95,25 +86,14 @@ def necrobit_signature(path: Path) -> bool:
                 p = c / n
                 e -= p * math.log2(p)
         return e
-    best = 0.0
+    hot = 0
+    total_windows = 0
     for i in range(0, max(1, len(data) - 4096), 1024):
-        best = max(best, ent(data[i:i + 4096]))
-    if best < 6.0:
+        total_windows += 1
+        if ent(data[i:i + 4096]) >= 6.0:
+            hot += 1
+    if total_windows == 0:
         return False
-    # secondary confirmation: file:BSJB-ratio blowup (Reactor packs
-    # grow the file 10-30x; a compressed-resource false positive
-    # like Costura/Fody has the same ratio, so also require the
-    # Reactor resource-name signature or absence of readable
-    # section names beyond the defaults)
-    import re as _re
-    sec_names = _re.findall(rb'\.[A-Za-z]{4,8}\x00', data[:0x400])
-    # Reactor ships its VM resource under a random name but keeps
-    # the default section set (.text/.rsrc/.reloc) — count distinct
-    # high-entropy windows instead: a NecroBit body blob spans
-    # MOST of .text, not one embedded resource.
-    hot = sum(1 for i in range(0, max(1, len(data) - 4096), 1024)
-              if ent(data[i:i + 4096]) >= 6.0)
-    total_windows = max(1, (len(data) - 4096) // 1024 + 1)
     # hot-ratio >= 3%: verified against real NecroBit builds
     # (dotqw 7.x: 4.4%, t1 NecroBit base: 6.4%, R1 6.x: 87%,
     # 7.5.9.1: 59%) while single embedded-resource false
@@ -126,13 +106,17 @@ def classify(path: Path) -> dict:
     if not pe_is_dotnet(path):
         entry["class"] = "native"
         return entry
-    if is_known_runtime(path.name):
-        entry["class"] = "runtime"
-        return entry
+    # readable marker FIRST: it is the strongest signal. An SDK/licensing
+    # library AND a protected build can both carry a runtime-like name —
+    # the old runtime-prefix-first order let anything named "system.*" or
+    # "microsoft.*" escape as "runtime" before the marker was even read.
     marker = reactor_marker(path)
     if marker:
         entry["class"] = "carrier"
         entry["marker"] = marker[:80]
+        return entry
+    if is_known_runtime(path.name):
+        entry["class"] = "runtime"
         return entry
     if necrobit_signature(path):
         entry["class"] = "protected"
