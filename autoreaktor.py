@@ -466,7 +466,8 @@ def main():
                             m = re.search(r"method actually written:\s*(\d+)", out2)
                             mres = int(m.group(1)) if m else -1
                             trial_logs.append({"base": bname, "rc": rc2, "restored": mres,
-                                               "written": tout.exists()})
+                                               "written": tout.exists(),
+                                               "written_path": str(tout) if tout.exists() else None})
                             if tout.exists() and (best is None or mres > best[0]):
                                 best = (mres, bname, tout, rc2, out2, dur2)
                         if best is None:
@@ -474,6 +475,11 @@ def main():
                         mrestored, base_used, outexe, rc2, out2, dur2 = best
                         mm = re.search(r"modul MethodDef:\s*(\d+)", out2)
                         module_methods = int(mm.group(1)) if mm else None
+                        # keep the slayer-base product even when it loses the
+                        # trial: it is the runnable-class input (real bodies
+                        # + decrypted strings + slayer-clean cctor)
+                        slayer_out_exe = next((t["written_path"] for t in trial_logs
+                                               if t["base"] == "slayer" and t.get("written_path")), None)
                         entry["stages"].append({"stage": "necrobit-merge", "rc": rc2,
                                                 "restored": mrestored,
                                                 "module_methods": module_methods,
@@ -534,10 +540,10 @@ def main():
             # hybrid-aware input: when the winning merge base was the slayer
             # module, the merged PE already carries the real bodies AND the
             # decrypted strings — start the loop from there
-            mb = next((st.get("merge_base") for st in entry["stages"]
-                       if st.get("stage") == "necrobit-merge"), None)
-            if mb == "slayer" and entry.get("necrobit_output"):
-                src5 = Path(entry["necrobit_output"])
+            slayer_merged = next((st.get("slayer_out_exe") for st in entry["stages"]
+                                  if st.get("stage") == "necrobit-merge"), None)
+            if slayer_merged and Path(slayer_merged).exists():
+                src5 = Path(slayer_merged)   # hybrid: real bodies + decrypted strings
             else:
                 src5 = Path(entry["slayer_output"])
             work5 = work / "runfix"
@@ -571,7 +577,7 @@ def main():
                 gen += 1
                 nxt = work5 / (src5.stem + f"_r{gen}" + src5.suffix)
                 rc, outc, _ = run_stage([str(nb_tools["ccfix_exe"]), "fix",
-                                         str(cur), str(nxt), meth],
+                                         str(cur), str(nxt), meth, "all"],
                                         cwd=work5, timeout=300)
                 iters.append({"method": meth, "rc": rc,
                               "log_tail": outc[-200:]})

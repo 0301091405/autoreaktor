@@ -120,7 +120,46 @@ class NBIlMerge {
     }
 
     static int Main(string[] a) {
-        if (a.Length < 3) { Console.WriteLine("usage: nbilmerge <in.exe> <dumpdir> <out.exe>"); return 1; }
+        if (a.Length >= 3 && a[0] == "map")
+        {
+            // Build an original->slayer MethodDef token map by matching
+            // (declaring type full name, method name, signature). Slayer does
+            // not rename symbols, but it can shift rids — dumping tokens are
+            // original-module rids, so binding into the slayer base needs
+            // this translation. Lines: <origHex> <slayerHex>
+            var orig = ModuleDefMD.Load(a[1]);
+            var slay = ModuleDefMD.Load(a[2]);
+            var lines = new List<string>();
+            var slayTypes = new Dictionary<string, TypeDef>();
+            foreach (var t in slay.GetTypes())
+                slayTypes[t.FullName] = t;
+            foreach (var t in orig.GetTypes())
+            {
+                TypeDef st;
+                if (!slayTypes.TryGetValue(t.FullName, out st)) continue;
+                var sm = new Dictionary<string, MethodDef>();
+                foreach (var m in st.Methods)
+                    sm[m.Name.String + "#" + m.MethodSig.ToString()] = m;
+                foreach (var m in t.Methods)
+                {
+                    MethodDef hit;
+                    if (sm.TryGetValue(m.Name.String + "#" + m.MethodSig.ToString(), out hit))
+                        lines.Add(((uint)m.MDToken.Raw).ToString("X8") + " " +
+                                  ((uint)hit.MDToken.Raw).ToString("X8"));
+                }
+            }
+            // entry-point anchor: slayer renames symbols but the entry
+            // point survives as THE entry point on both sides
+            if (orig.EntryPoint != null && slay.EntryPoint != null)
+                lines.Add(((uint)orig.EntryPoint.MDToken.Raw).ToString("X8") + " " +
+                          ((uint)slay.EntryPoint.MDToken.Raw).ToString("X8"));
+            File.WriteAllLines(a[3], lines);
+            Console.WriteLine("[map] " + lines.Count + " tokens (entry anchor: " +
+                (orig.EntryPoint != null ? ((uint)orig.EntryPoint.MDToken.Raw).ToString("X6") : "none") +
+                ") -> " + a[3]);
+            return 0;
+        }
+        if (a.Length < 3) { Console.WriteLine("usage: nbilmerge map <orig> <slayer> <out.map> | nbilmerge <in.exe> <dumpdir> <out.exe>"); return 1; }
         var mod = ModuleDefMD.Load(a[0]);
 
         var files = Directory.GetFiles(a[1], "m_*.bin");
@@ -214,12 +253,25 @@ class NBIlMerge {
                                     ldstrMap[tk] = kv[1];
                                 }
                             }
+                var tokenMap = new System.Collections.Generic.Dictionary<uint, uint>();
+                string tmPath = Environment.GetEnvironmentVariable("NB_TOKENMAP");
+                if (!string.IsNullOrEmpty(tmPath) && System.IO.File.Exists(tmPath))
+                    foreach (var ln in System.IO.File.ReadAllLines(tmPath))
+                    {
+                        var parts = ln.Trim().Split(' ');
+                        uint o, b;
+                        if (parts.Length == 2 &&
+                            uint.TryParse(parts[0], System.Globalization.NumberStyles.HexNumber, null, out o) &&
+                            uint.TryParse(parts[1], System.Globalization.NumberStyles.HexNumber, null, out b))
+                            tokenMap[o] = b;
+                    }
                 int seqIdx = 0;
                         int stubHit = 0;
                         int stubTokHit = 0, ldstrRebound = 0;
         for (int i = 0; i < toks.Count; i++) {
             // NB_STUBMAPTOK first (token-precise), then NB_STUBMAP (name).
             string baseName = System.IO.Path.GetFileName(files[i]);
+            uint effTok = toks[i];   // possibly translated via NB_TOKENMAP
                             MethodDef stubTarget = null;
                             string dumpName = null;
                             string tokName = null;
@@ -244,7 +296,7 @@ class NBIlMerge {
             if (noBodyWrite) { skipped++; continue; }
             MethodDef m = stubTarget;
                         bool have = stubTarget != null;
-                        if (!have) have = byToken.TryGetValue(toks[i], out m);
+                        if (!have) have = byToken.TryGetValue(effTok, out m);
                         if (!have || m == null) {
                 if (seqMode && seqIdx < bodyless.Count) {
                                     m = bodyless[seqIdx++];
@@ -272,7 +324,7 @@ class NBIlMerge {
                                     have = true;
                                 } else {
                                     skipped++;
-                                    if (i < 3) Console.WriteLine("  [miss] 0x" + toks[i].ToString("X8"));
+                                    if (i < 3) Console.WriteLine("  [miss] 0x" + effTok.ToString("X8"));
                                     continue;
                                 }
             }
@@ -290,6 +342,15 @@ class NBIlMerge {
             // reflection-equivalence pass until locals carry real types
             if (m != null && m.DeclaringType != null && m.DeclaringType.HasGenericParameters)
             { skipped++; continue; }
+            // NB_TOKENMAP: translate original-module dump tokens into the
+            // base module's rids (slayer bases can shift rids; binding by
+            // the raw dump token would cross-bind wrong bodies)
+            if (tokenMap != null)
+            {
+                uint mapped;
+                if (tokenMap.TryGetValue(toks[i], out mapped)) effTok = mapped;
+                else { skipped++; continue; }   // no identity in this base
+            }
             try {
                 // CreateCilBody METHOD BODY HEADER'li akis bekler:
                 // il<64 -> tiny (il<<2)|2, degilse 12-byte fat header.

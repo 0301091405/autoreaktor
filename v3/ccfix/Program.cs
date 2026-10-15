@@ -76,27 +76,62 @@ class Program
         {
             if (args.Length < 4) { Console.WriteLine("ccfix fix <in> <out> <calleeName>"); return 1; }
             string callee = args[3];
+            bool allMethods = args.Length > 4 && args[4] == "all";
             int removed = 0;
-            // the antitamper checker is invoked from several module ctors —
-            // nop every call site of the named method anywhere
-            var toNop = new List<Tuple<MethodDef, Instruction>>();
+            // Cut every call site of the named method. Plain nops only work
+            // when the return value is unused; when it IS consumed the stack
+            // comes up short and the JIT throws InvalidProgramException — so
+            // each cut pushes a zero-equivalent for the callee's return type
+            // (void -> plain nop, numbers -> ldc 0, everything else -> ldnull).
+            var cuts = new List<Tuple<MethodDef, Instruction, Instruction>>();
             foreach (var t in mod.GetTypes())
                 foreach (var m in t.Methods)
                 {
-                    if (!m.HasBody || !m.IsStatic || m.Name != ".cctor") continue;
+                    if (!m.HasBody) continue;
+                    if (!allMethods && !(m.IsStatic && m.Name == ".cctor")) continue;
                     foreach (var ins in m.Body.Instructions)
                         if (ins.OpCode == OpCodes.Call && ins.Operand is IMethod op &&
                             op.Name.String == callee)
-                            toNop.Add(Tuple.Create(m, ins));
+                        {
+                            var def = op.ResolveMethodDef();
+                            Instruction push = null;
+                            if (def != null && def.ReturnType != null)
+                            {
+                                var rt = def.ReturnType.FullName ?? "";
+                                if (rt == "System.Int32" || rt == "System.UInt32" ||
+                                    rt == "System.Int16" || rt == "System.UInt16" ||
+                                    rt == "System.SByte" || rt == "System.Byte" ||
+                                    rt == "System.Boolean" || rt == "System.Char")
+                                    push = OpCodes.Ldc_I4_0.ToInstruction();
+                                else if (rt == "System.Int64" || rt == "System.UInt64")
+                                    push = OpCodes.Ldc_I8.ToInstruction(0L);
+                                else if (rt == "System.Single")
+                                    push = OpCodes.Ldc_R4.ToInstruction(0f);
+                                else if (rt == "System.Double")
+                                    push = OpCodes.Ldc_R8.ToInstruction(0.0);
+                                else if (rt != "System.Void")
+                                    push = OpCodes.Ldnull.ToInstruction();
+                            }
+                            cuts.Add(Tuple.Create(m, ins, push));
+                        }
                 }
-            foreach (var pair in toNop)
+            foreach (var cut in cuts)
             {
-                pair.Item2.OpCode = OpCodes.Nop;
-                pair.Item2.Operand = null;
+                if (cut.Item3 == null)
+                { cut.Item2.OpCode = OpCodes.Nop; cut.Item2.Operand = null; }
+                else
+                { cut.Item2.OpCode = cut.Item3.OpCode; cut.Item2.Operand = cut.Item3.Operand; }
                 removed++;
-                Console.WriteLine("[ccfix] nop'd in " + pair.Item1.DeclaringType?.Name + "..cctor");
+                Console.WriteLine("[ccfix] cut call in " + cut.Item1.DeclaringType?.Name +
+                                  "::" + cut.Item1.Name +
+                                  (cut.Item3 == null ? " (nop)" : " (zero-push)"));
             }
-            if (removed == 0) { Console.WriteLine("[ccfix] no call to " + callee + " found in any cctor"); return 3; }
+            if (removed == 0)
+            {
+                Console.WriteLine("[ccfix] no call to " + callee + " found" +
+                                  (allMethods ? "" : " in cctors (try: ccfix fix <in> <out> <name> all)"));
+                return 3;
+            }
 
             // keep every token where it is — PreserveAll, same as nbilmerge
             var opts = new dnlib.DotNet.Writer.ModuleWriterOptions(mod);
