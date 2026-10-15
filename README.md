@@ -22,14 +22,17 @@ cd autoreaktor
 tools/setup.sh        # fetches dnlib, de4dotEx, NETReactorSlayer, Krypton
 ```
 
-Requirements: Windows with .NET Framework 4.8 (targets are WinForms-era), Python 3.8+, and the .NET SDK for building Krypton.
+Requirements: Windows with .NET Framework 4.8 (targets are WinForms-era), Python 3.8+, the .NET SDK (C# tools + Krypton), and MSVC BuildTools with a Windows SDK for stage 4 — the JIT hook DLLs and the merger are built automatically on the first protected target (`v3/jitdump/msvc_env.py` discovers the toolchain; no hardcoded paths).
 
 ## Use
 
 ```
-python hunt.py <dir>                 # classify: clean / carrier / runtime / protected / native
-python autoreaktor.py <dir|file> --deep   # full chain, per-file report.json
+python hunt.py <dir>                     # classify: clean / carrier / runtime / protected / native
+python autoreaktor.py <dir> --hunt       # same classification, writes _ar_out/hunt.json
+python autoreaktor.py <dir|file> --deep  # full chain, per-file report.json
 ```
+
+`--deep` runs the full chain per file: de4dot → NETReactorSlayer → runnable-probe → Krypton (VM) → NecroBit JIT recovery. Stage 4 launches suspected protected targets under the clrjit hook, dumps the decrypted bodies (+ exception clauses) and writes them back via `nbilmerge` — hook DLLs and the merger are built on demand (MSVC required). Pass `--no-nb` to skip it; every outcome lands in `report.json`, including what was NOT recovered.
 
 The report records every stage's exit code, the hashes in and out, and the verification result — including what was NOT recovered. No stage failure is masked.
 
@@ -40,19 +43,20 @@ The repo ships a pack-and-verify harness so nobody has to trust a protected samp
 
 ```
 # 1. build the test target (a 20-line console app with string-encryption bait)
-cd verify_target && dotnet publish -c Release -o out
+cd verify_target && dotnet publish -c Release -o out && cd ..
 
 # 2. protect it with the free .NET Reactor demo console
-dotNET_Reactor.Console.exe -file outerify_target.dll ^
+dotNET_Reactor.Console.exe -file verify_target\out\verify_target.dll ^
   -necrobit 1 -stringencryption 1 -antitamp 1 -antidebug 1 ^
   -control_flow 1 -flow_level 9 -obfuscation 1 -resourceencryption 1 ^
   -compression 1 -suppressildasm 1 -hide_calls 1 -nodialog -q
 
-# 3. run the pipeline on the protected build
-python autoreaktor.py <that-dir> --deep
+# 3. run the pipeline on the folder holding the protected build
+python autoreaktor.py verify_target\out --deep
 
-# 4. invoke the unpacked assembly via proof_loader
-cd ../proof_loader && dotnet run -- <...>erify_target_Slayed.dll
+# 4. invoke the Slayer output via proof_loader — take the exact path from
+#    report.json ("slayer_output" field)
+cd proof_loader && dotnet run -- <report.json slayer_output path>
 ```
 
 Expected proof output (the two secrets the packer encrypted, back in plaintext):
@@ -64,16 +68,16 @@ DH-VERIFY-SECRET-<hex>
 exit: 0
 ```
 
-If your own target needs NecroBit body recovery instead, see `v3/README.md`.
+If your own target needs NecroBit body recovery instead, stage 4 handles it in the chain — or see `v3/README.md` for the manual deep-dive route.
 
 ## How the NecroBit recovery works
 
 Static strippers fail on modern NecroBit because the CIL bodies never exist decrypted on disk: `MethodDef.RVA` points at a decoy stub, and the real body is only assembled in memory at JIT time. The route that does not race the packer:
 
-1. `v3/jitdump/clrjit_hook.cpp` — VMT hook on `ICorJitCompiler::compileMethod`, injected at process start.
+1. `v3/jitdump/clrjit_hook.cpp` — VMT hook on `ICorJitCompiler::compileMethod`, injected at process start. With `NB_EHSLOT` set it also hooks the `getEHinfo` vtable slot and captures each method's exception clauses (`m_*.eh`).
 2. `v3/jitdump/nbjit_launch.c` — suspended `CreateProcess` + `QueueUserAPC(LoadLibraryA)` launcher (built per-target bitness).
-3. `v3/jitdump/nbjitdump.py` — orchestrator: detects the target's machine type, builds the matching launcher, runs it, collects the bodies.
-4. `v3/jitdump/nbilmerge.cs` — write-back: merges dumped bodies into a module dnSpy/ILSpy can open.
+3. `v3/jitdump/nbjitdump.py` — orchestrator: detects the target's machine type, builds the matching launcher (MSVC discovered via `v3/jitdump/msvc_env.py` — no hardcoded versions), runs it, collects the bodies.
+4. `v3/jitdump/nbilmerge.cs` — write-back: merges dumped bodies into a module dnSpy/ILSpy can open, reattaches the captured EH clauses and binds every local instruction to its true index from a raw-IL scan.
 
 There is no key-derivation emulation, no per-version offset tables — the pipeline takes the bodies at the moment the runtime itself hands them to the JIT, so it is structurally immune to Reactor version bumps that break static decrypters.
 
@@ -96,17 +100,19 @@ Documented in the READMEs, measured on real targets, no inflation:
 - **Coverage** is bounded by what the process JITs during the dump window; a GUI driver (`v3/jitdump/jitdrive.py`) grows it but 100% on arbitrary targets is not guaranteed.
 - Demo-packed binaries older than 14 days refuse to run (Eziriz demo timer) — neutralize the timer check first.
 - **Ordering on all-flags 7.5 builds**: running `nbrebuild` directly on the packed file can produce a module that throws `BadImageFormatException` at load. Run the `nbfixctor2` ctor repair first (`NB_V50=1`), then `nbrebuild`; the combined output launches clean (verified T+8s with GUI on the all-flags target in `v3/multi-target/T-MATRIX.md`).
+- **Runtime slot hooks** (`NB_EHSLOT`, `NB_STRSLOT`, `NB_VTSLOT`) are vtable-slot indices that vary across CLR builds — they default to safe/off values and every one is documented with its discovery recipe in `docs/ENV-VARS.md`.
 
 ## Repo layout
 
 | Path | Purpose |
 |---|---|
-| `autoreaktor.py`, `hunt.py` | pipeline entry, target classification |
+| `autoreaktor.py`, `hunt.py` | pipeline entry (stage 4 included), target classification |
 | `tools/setup.sh` | fetch third-party dependencies (not committed) |
 | `v3/jitdump/` | JIT-entry NecroBit recovery (hook, launcher, orchestrator, merge) |
 | `v3/nbdump.py`, `v3/nbwalk/`, `v3/nbrebuild/` | NecroBit reflection harvest + call-site rebuild |
 | `v3/nagstrip/` | nag/tamper/ctor repair tools |
 | `verify_target/`, `proof_loader/` | pack-and-verify harness (own binaries only) |
+| `docs/ENV-VARS.md` | every `NB_*` knob: default, effect, when to use |
 | `v3/RESEARCH-necrobit.md` | NecroBit mechanism, evidence-backed |
 
 ## License

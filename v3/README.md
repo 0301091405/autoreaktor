@@ -13,7 +13,7 @@ against the original's GUI behavior.
 | Research | `v3/RESEARCH-necrobit.md` | Full NecroBit 7.3 mechanism, measured on-target | 226/226 inventory on the June 2025 challenge target, JIT-hook dead-ends documented with evidence |
 | Harvest | `v3/nbdump.py` | Reflection harvest: policyCreatorDic + delegate-chain DynamicMethod IL | harvested fragments 100% cross-matched, rc=0 |
 | Rebuild | `v3/nbrebuild/` | dnlib patcher: inline delegate fragments, sanitize dead dummies, write | 1,502 call-sites substituted in 192 methods, 0 unresolved, **0 NecroBit pairs remain** |
-| Proof | `v3/test-rebuild/` | Live GUI equivalence harness | Rebuilt binary opens the identical `reactor73` GUI; register-click behavior byte-identical (`error` box on empty fields, same as original) |
+| Proof | live GUI equivalence runs (recorded per target in `v3/multi-target/T-MATRIX.md`) | rebuilt binary vs original side-by-side | rebuilt binary opens the identical `reactor73` GUI; register-click behavior byte-identical (`error` box on empty fields, same as original) |
 
 ## The three bugs between "writes a binary" and "runs a binary"
 
