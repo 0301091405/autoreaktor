@@ -42,31 +42,24 @@ The report records every stage's exit code, the hashes in and out, and the verif
 The repo ships a pack-and-verify harness so nobody has to trust a protected sample:
 
 ```
-# 1. build the test target (a 20-line console app with string-encryption bait)
-cd verify_target && dotnet publish -c Release -o out && cd ..
+# 1. build the test target — the net48 leg is the primary Reactor class (x86)
+cd verify_target && dotnet publish -c Release -f net48 -o out48 && cd ..
 
-# 2. protect it with the free .NET Reactor demo console
-dotNET_Reactor.Console.exe -file verify_target\out\verify_target.dll ^
+# 2. protect it with the free .NET Reactor demo console (7.5.0.0 verified)
+dotNET_Reactor.Console.exe -file verify_target\out48\verify_target.exe ^
   -necrobit 1 -stringencryption 1 -antitamp 1 -antidebug 1 ^
   -control_flow 1 -flow_level 9 -obfuscation 1 -resourceencryption 1 ^
-  -compression 1 -suppressildasm 1 -hide_calls 1 -nodialog -q
+  -suppressildasm 1 -hide_calls 1 -nodialog -q
 
-# 3. run the pipeline on the folder holding the protected build
-python autoreaktor.py verify_target\out --deep
+# 3. run the pipeline on the protected output (lands in verify_target_Secure/)
+python autoreaktor.py verify_target_Secure --deep
 
-# 4. invoke the Slayer output via proof_loader — take the exact path from
-#    report.json ("slayer_output" field)
-cd proof_loader && dotnet run -- <report.json slayer_output path>
+# 4. inspect the per-stage report — stage 4 shows hook status, dumped bodies,
+#    EH tables and the merge restore count; the recovered analysis PE lands
+#    in _ar_out/work/<name>/nbmerge/
 ```
 
-Expected proof output (the two secrets the packer encrypted, back in plaintext):
-
-```
-hello from test target
-DH-VERIFY-PLAINTEXT-MARKER-7F3A
-DH-VERIFY-SECRET-<hex>
-exit: 0
-```
+Verified end-to-end on a fresh 7.5.0.0 demo target: hunt `protected` → de4dot → Slayer → Krypton → 267 decrypted bodies dumped → 220/411 methods restored into the analysis PE by real tokens → 9 EH clause tables captured. See T-MATRIX row T8.
 
 If your own target needs NecroBit body recovery instead, stage 4 handles it in the chain — or see `v3/README.md` for the manual deep-dive route.
 
