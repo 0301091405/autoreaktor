@@ -89,6 +89,13 @@ class Program
                 {
                     if (!m.HasBody) continue;
                     if (!allMethods && !(m.IsStatic && m.Name == ".cctor")) continue;
+                    // NB_NOCUT_TYPE: comma-separated declaring-type names whose
+                    // call sites must survive (the entry-point type's body is
+                    // load-bearing; a bad cut there kills the whole run)
+                    string noCut = Environment.GetEnvironmentVariable("NB_NOCUT_TYPE") ?? "";
+                    if (noCut.Length > 0 && m.DeclaringType != null &&
+                        noCut.Split(',').Any(t => t.Trim() == m.DeclaringType.Name.String))
+                        continue;
                     foreach (var ins in m.Body.Instructions)
                         if (ins.OpCode == OpCodes.Call && ins.Operand is IMethod op &&
                             op.Name.String == callee)

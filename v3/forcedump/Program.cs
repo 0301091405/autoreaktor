@@ -221,6 +221,41 @@ static class ForceDump
                     {
                         try
                         {
+                            // EH clauses from the PRE-prepare body object: the
+                            // decoded view exists even when PrepareMethod
+                            // refused - without these, cflow'd bodies lose
+                            // their try/finally tables (InvalidProgram)
+                            string edir = Environment.GetEnvironmentVariable("JITDUMP_DIR");
+                            var ecl = body0 == null ? null : body0.ExceptionHandlingClauses;
+                            if (!string.IsNullOrEmpty(edir) && ecl != null && ecl.Count > 0)
+                            {
+                                var ebuf = new byte[4 + ecl.Count * 28];
+                                Put(ebuf, 0, (uint)ecl.Count);
+                                for (int ci = 0; ci < ecl.Count; ci++)
+                                {
+                                    var c = ecl[ci];
+                                    int o = 4 + ci * 28;
+                                    uint eflags =
+                                        c.Flags == ExceptionHandlingClauseOptions.Finally ? 2u :
+                                        c.Flags == ExceptionHandlingClauseOptions.Filter ? 1u :
+                                        c.Flags == ExceptionHandlingClauseOptions.Fault ? 3u : 0u;
+                                    Put(ebuf, o, eflags);
+                                    Put(ebuf, o + 4, (uint)c.TryOffset);
+                                    Put(ebuf, o + 8, (uint)c.TryLength);
+                                    Put(ebuf, o + 12, (uint)c.HandlerOffset);
+                                    Put(ebuf, o + 16, (uint)c.HandlerLength);
+                                    uint etok = 0;
+                                    if (c.Flags == ExceptionHandlingClauseOptions.Filter)
+                                        etok = (uint)c.FilterOffset;
+                                    else if (c.Flags == ExceptionHandlingClauseOptions.Clause && c.CatchType != null)
+                                        etok = (uint)c.CatchType.MetadataToken;
+                                    Put(ebuf, o + 20, etok);
+                                    Put(ebuf, o + 24, 0);
+                                }
+                                string epath = Path.Combine(edir,
+                                    "m_" + m.MetadataToken.ToString("X8") + ".eh");
+                                if (!File.Exists(epath)) File.WriteAllBytes(epath, ebuf);
+                            }
                             string bdir2 = Environment.GetEnvironmentVariable("JITDUMP_DIR");
                             string p2 = Path.Combine(bdir2, "m_" + m.MetadataToken.ToString("X8") + ".bin");
                             if (!File.Exists(p2))
