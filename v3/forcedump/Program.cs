@@ -221,12 +221,14 @@ static class ForceDump
                     {
                         try
                         {
-                            // EH clauses from the PRE-prepare body object: the
+                            // EH clauses: re-read from a FRESH MethodBody - the
                             // decoded view exists even when PrepareMethod
-                            // refused - without these, cflow'd bodies lose
-                            // their try/finally tables (InvalidProgram)
+                            // refused (the runtime hands out the decrypted
+                            // body lazily) - without these, cflow'd bodies
+                            // lose their try/finally tables (InvalidProgram)
                             string edir = Environment.GetEnvironmentVariable("JITDUMP_DIR");
-                            var ecl = body0 == null ? null : body0.ExceptionHandlingClauses;
+                            var fresh = m.GetMethodBody();
+                            var ecl = fresh == null ? null : fresh.ExceptionHandlingClauses;
                             if (!string.IsNullOrEmpty(edir) && ecl != null && ecl.Count > 0)
                             {
                                 var ebuf = new byte[4 + ecl.Count * 28];
@@ -260,14 +262,17 @@ static class ForceDump
                             string p2 = Path.Combine(bdir2, "m_" + m.MetadataToken.ToString("X8") + ".bin");
                             if (!File.Exists(p2))
                             {
-                                var bout2 = new byte[24 + ilBytes.Length];
+                                var rb = m.GetMethodBody();
+                                var rbBytes = (rb ?? body0)?.GetILAsByteArray();
+                                if (rbBytes == null || rbBytes.Length == 0) rbBytes = ilBytes;
+                                var bout2 = new byte[24 + rbBytes.Length];
                                 Put(bout2, 0, (uint)m.MetadataToken);
-                                Put(bout2, 4, (uint)ilBytes.Length);
+                                Put(bout2, 4, (uint)rbBytes.Length);
                                 Put(bout2, 8, (uint)(body0?.MaxStackSize ?? 8));
                                 Put(bout2, 12, 0);
                                 Put(bout2, 16, 0);
                                 Put(bout2, 20, 0);
-                                Array.Copy(ilBytes, 0, bout2, 24, ilBytes.Length);
+                                Array.Copy(rbBytes, 0, bout2, 24, rbBytes.Length);
                                 File.WriteAllBytes(p2, bout2);
                                 dumped++;
                             }

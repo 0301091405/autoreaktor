@@ -463,12 +463,21 @@ def main():
                             tenv = None
                             if bname == "slayer":
                                 # slayer can shift rids and rename symbols —
-                                # translate original dump tokens via a map
-                                # (symbol match + entry-point anchor)
+                                # build a FULL token translation map (all
+                                # tables: methods by name/body-fingerprint/
+                                # entry anchor, typerefs, fields, memberrefs,
+                                # typespecs, standalonesigs, methodspecs)
                                 mapf = outdir / "tokmap.txt"
-                                run_stage([str(nb_tools["merge_exe"]), "map",
-                                           str(base), str(bpath), str(mapf)],
-                                          cwd=work, timeout=300)
+                                tbuild = nb_tools["dir"] / "bin" / "Release" / "tokmap_builder.exe"
+                                if not tbuild.exists():
+                                    run_stage(["dotnet", "build",
+                                               str(nb_tools["dir"] / "tokmap_builder.csproj"),
+                                               "-c", "Release", "-v", "q", "--nologo"],
+                                              cwd=nb_tools["dir"], timeout=600)
+                                if tbuild.exists():
+                                    run_stage([str(tbuild), str(base), str(bpath),
+                                               str(mapf), "--report"],
+                                              cwd=work, timeout=600)
                                 if mapf.exists():
                                     tenv = dict(os.environ)
                                     tenv["NB_TOKENMAP"] = str(mapf)

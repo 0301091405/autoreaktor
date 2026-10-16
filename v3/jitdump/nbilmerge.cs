@@ -18,11 +18,15 @@ class NBIlMerge {
     // body with exact instruction boundaries.
     static Dictionary<byte, int> _opLen1;
     static Dictionary<byte, int> _opLen2;   // second byte after 0xFE
+    static Dictionary<byte, int> _tokOps1;  // single-byte token consumers
+    static Dictionary<byte, int> _tokOps2;  // 0xFE-prefixed token consumers
 
     static void EnsureOpTables() {
         if (_opLen1 != null) return;
         _opLen1 = new Dictionary<byte, int>();
         _opLen2 = new Dictionary<byte, int>();
+        _tokOps1 = new Dictionary<byte, int>();
+        _tokOps2 = new Dictionary<byte, int>();
         foreach (var f in typeof(System.Reflection.Emit.OpCodes).GetFields()) {
             if (!f.IsStatic || f.FieldType != typeof(System.Reflection.Emit.OpCode)) continue;
             var op = (System.Reflection.Emit.OpCode)f.GetValue(null);
@@ -41,9 +45,16 @@ class NBIlMerge {
                 case System.Reflection.Emit.OperandType.InlineSwitch: sz = 0; break;   // handled specially
                 default: sz = 4; break; // InlineMethod/Field/Tok/String/Sig/BrTarget/I/R4
             }
+            bool isTok = op.OperandType == System.Reflection.Emit.OperandType.InlineMethod ||
+                         op.OperandType == System.Reflection.Emit.OperandType.InlineField ||
+                         op.OperandType == System.Reflection.Emit.OperandType.InlineType ||
+                         op.OperandType == System.Reflection.Emit.OperandType.InlineTok ||
+                         op.OperandType == System.Reflection.Emit.OperandType.InlineString ||
+                         op.OperandType == System.Reflection.Emit.OperandType.InlineSig;
+            if (!isTok) continue;
             ushort v = (ushort)op.Value;
-            if (v < 0x100) _opLen1[(byte)v] = sz;
-            else _opLen2[(byte)(v & 0xFF)] = sz;
+            if (v < 0x100) _tokOps1[(byte)v] = sz;
+            else _tokOps2[(byte)(v & 0xFF)] = sz;
         }
     }
 
@@ -106,6 +117,51 @@ class NBIlMerge {
         localCount = maxIdx + 1;
         if (localCount < 1) localCount = 1;
         return map;
+    }
+
+    // Rewrite token operands of a raw body through the translation map.
+    // Walks with exact instruction boundaries (opcode tables) and patches
+    // every 4-byte operand of a token-consuming instruction. Unmapped tokens
+    // stay as-is and are reported.
+    static byte[] RewriteTokens(byte[] cil, Dictionary<uint, uint> map, out int unmapped)
+    {
+        unmapped = 0;
+        var outp = (byte[])cil.Clone();
+        EnsureOpTables();
+        int i = 0, n = cil.Length;
+        while (i < n)
+        {
+            byte b0 = cil[i];
+            int tokOff = -1, len;
+            if (b0 == 0xFE)
+            {
+                if (i + 1 >= n) break;
+                byte b1 = cil[i + 1];
+                int sz; if (!_opLen2.TryGetValue(b1, out sz)) sz = 0;
+                len = 2 + sz;
+                if (_tokOps2.ContainsKey(b1) && i + 2 + 4 <= n) tokOff = i + 2;
+            }
+            else
+            {
+                len = OpLen(b0, cil, i, n);
+                if (_tokOps1.ContainsKey(b0) && i + 1 + 4 <= n) tokOff = i + 1;
+            }
+            if (tokOff >= 0)
+            {
+                uint tok = BitConverter.ToUInt32(cil, tokOff);
+                uint nt;
+                if (map.TryGetValue(tok, out nt)) BitConverter.GetBytes(nt).CopyTo(outp, tokOff);
+                else
+                {
+                    unmapped++;
+                    Console.WriteLine("    [tok-unmapped] " + ((tok >> 24).ToString("X2")) +
+                        " rid=" + (tok & 0xFFFFFF).ToString("X"));
+                }
+            }
+            if (len < 1) len = 1;
+            i += len;
+        }
+        return outp;
     }
 
     // Exclusive end offset -> first instruction starting AFTER the region.
@@ -397,6 +453,14 @@ class NBIlMerge {
                     // intact. Read the target method's own LocalVarSigTok from
                     // the metadata and resolve it: Object-only locals make
                     // value-type stores unverifiable IL (InvalidProgram).
+                    if (tokenMap != null)
+                    {
+                        int unmapped;
+                        bodies[i] = RewriteTokens(bodies[i], tokenMap, out unmapped);
+                        if (unmapped > 0)
+                            Console.WriteLine("  [tok] 0x" + toks[i].ToString("X8") +
+                                " " + unmapped + " unmapped token(s) left as-is");
+                    }
                     bool realLocals = false;
                     uint ltok = localsToks[i];
                     try {
@@ -524,11 +588,14 @@ class NBIlMerge {
                             for (int c = 0; c < cnt2; c++) {
                                 uint cflags = flatEh[c * 7 + 0], tryOff = flatEh[c * 7 + 1],
                                      tryLen = flatEh[c * 7 + 2], hOff = flatEh[c * 7 + 3],
-                                     hLen = flatEh[c * 7 + 4], clsTok = flatEh[c * 7 + 5],
+                                     hLen = flatEh[c * 7 + 4];
+                                uint clsTok = flatEh[c * 7 + 5],
                                      filtOff = flatEh[c * 7 + 6];
+                                if (tokenMap != null && tokenMap.TryGetValue(clsTok, out var mappedCls))
+                                    clsTok = mappedCls;
                                 Instruction tryStart, hStart;
-                                if (!off2ins.TryGetValue(tryOff, out tryStart)) { ehDropped++; continue; }
-                                if (!off2ins.TryGetValue(hOff, out hStart)) { ehDropped++; continue; }
+                                if (!off2ins.TryGetValue(tryOff, out tryStart)) { ehDropped++; Console.WriteLine("    [eh-drop] tryOff " + tryOff); continue; }
+                                if (!off2ins.TryGetValue(hOff, out hStart)) { ehDropped++; Console.WriteLine("    [eh-drop] hOff " + hOff); continue; }
                                 // CORINFO_EH_CLAUSE_FLAGS: 0 catch, 1 filter,
                                 // 2 finally, 3 fault (mask off meta bits).
                                 var htype =
@@ -551,7 +618,7 @@ class NBIlMerge {
                                         var resolved = ((ITokenResolver)mod).ResolveToken(clsTok, new GenericParamContext());
                                         eh.CatchType = resolved as ITypeDefOrRef;
                                     } catch { }
-                                    if (eh.CatchType == null) { ehDropped++; continue; }
+                                    if (eh.CatchType == null) { ehDropped++; Console.WriteLine("    [eh-drop] catch-type 0x" + clsTok.ToString("X8") + " unresolvable"); continue; }
                                 }
                                 newBody.ExceptionHandlers.Add(eh);
                                 ehAdded++;
