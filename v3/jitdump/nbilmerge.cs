@@ -123,9 +123,26 @@ class NBIlMerge {
     // Walks with exact instruction boundaries (opcode tables) and patches
     // every 4-byte operand of a token-consuming instruction. Unmapped tokens
     // stay as-is and are reported.
-    static byte[] RewriteTokens(byte[] cil, Dictionary<uint, uint> map, out int unmapped)
+    static bool Resolves(ModuleDefMD baseMod, uint tok)
     {
-        unmapped = 0;
+        try
+        {
+            var r = ((ITokenResolver)baseMod).ResolveToken(tok, new GenericParamContext());
+            return r != null;
+        }
+        catch { return false; }
+    }
+
+    static void Zero(byte[] outp, int i, int len, bool isStore)
+    {
+        for (int k = 0; k < len; k++) outp[i + k] = 0x00;
+        if (isStore) { if (len >= 1) outp[i] = 0x26; if (len >= 2) outp[i + 1] = 0x26; }
+        else outp[i] = 0x14;
+    }
+
+    static byte[] RewriteTokens(ModuleDefMD baseMod, byte[] cil, Dictionary<uint, uint> map, out int unmapped)
+    {
+        unmapped = 0; int zeroed = 0;
         var outp = (byte[])cil.Clone();
         EnsureOpTables();
         int i = 0, n = cil.Length;
@@ -150,10 +167,17 @@ class NBIlMerge {
             {
                 uint tok = BitConverter.ToUInt32(cil, tokOff);
                 uint nt;
-                if (map.TryGetValue(tok, out nt)) BitConverter.GetBytes(nt).CopyTo(outp, tokOff);
+                uint finalTok = tok;
+                if (map.TryGetValue(tok, out nt)) { BitConverter.GetBytes(nt).CopyTo(outp, tokOff); finalTok = nt; }
+                else unmapped++;
+                if (!Resolves(baseMod, finalTok))
+                {
+                    bool isStore = b0 == 0x80 || b0 == 0x7D || b0 == 0xA1;
+                    Zero(outp, i, len, isStore);
+                    zeroed++;
+                }
                 else
                 {
-                    unmapped++;
                     Console.WriteLine("    [tok-unmapped] " + ((tok >> 24).ToString("X2")) +
                         " rid=" + (tok & 0xFFFFFF).ToString("X"));
                 }
@@ -161,6 +185,7 @@ class NBIlMerge {
             if (len < 1) len = 1;
             i += len;
         }
+        if (zeroed > 0) Console.WriteLine("    [zero] " + zeroed + " dangling ref(s) zero-pushed");
         return outp;
     }
 
@@ -469,7 +494,7 @@ class NBIlMerge {
                     if (tokenMap != null)
                     {
                         int unmapped;
-                        bodies[i] = RewriteTokens(bodies[i], tokenMap, out unmapped);
+                        bodies[i] = RewriteTokens(mod, bodies[i], tokenMap, out unmapped);
                         if (unmapped > 0)
                             Console.WriteLine("  [tok] 0x" + toks[i].ToString("X8") +
                                 " " + unmapped + " unmapped token(s) left as-is");
@@ -627,7 +652,7 @@ class NBIlMerge {
                                 eh.HandlerEnd = RegionEnd(off2ins, newBody.Instructions, hOff + hLen);
                                 if (htype == ExceptionHandlerType.Filter) {
                                     Instruction fStart;
-                                    if (!off2ins.TryGetValue(filtOff, out fStart)) { ehDropped++; continue; }
+                                    if (!off2ins.TryGetValue(filtOff, out fStart)) { ehDropped++; Console.WriteLine("    [eh-drop] filter " + filtOff); continue; }
                                     eh.FilterStart = fStart;
                                 }
                                 if (htype == ExceptionHandlerType.Catch && clsTok != 0) {
@@ -683,6 +708,40 @@ class NBIlMerge {
         Console.WriteLine("stubTok hits: " + stubTokHit + " | ldstr rebound: " + ldstrRebound);
         string mw = Environment.GetEnvironmentVariable("NB_MAXWRITE");
         if (mw != null) Console.WriteLine("NB_MAXWRITE=" + mw + " (limit modu)");
+
+        // POST-WRITE DANGLING SCAN: every restored body's final IL is walked
+        // against the base module; anything unresolvable prints with its
+        // method, offset and token (cap 20) - this pinpoints exactly which
+        // reference still dangles when a MissingMethod survives
+        {
+            int printed = 0;
+            foreach (var t in mod.GetTypes())
+                foreach (var mm in t.Methods)
+                {
+                    if (!mm.HasBody) continue;
+                    foreach (var ins in mm.Body.Instructions)
+                    {
+                        uint? tok = null;
+                        try
+                        {
+                            if (ins.Operand is ITypeDefOrRef tdr) tok = (uint)tdr.MDToken.Raw;
+                            else if (ins.Operand is IMethod im && im.MDToken != null) tok = (uint)im.MDToken.Raw;
+                            else if (ins.Operand is IField fd && fd.MDToken != null) tok = (uint)fd.MDToken.Raw;
+                        }
+                        catch { }
+                        if (tok == null) continue;
+                        if (!Resolves(mod, tok.Value))
+                        {
+                            printed++;
+                            if (printed <= 20)
+                                Console.WriteLine("    [dangle] " + t.FullName + "::" + mm.Name +
+                                    " +" + ins.Offset + " " + ins.OpCode.Name + " 0x" +
+                                    tok.Value.ToString("X8"));
+                        }
+                    }
+                }
+            Console.WriteLine("  [dangle-scan] unresolvable operands: " + printed);
+        }
 
         // null-operand write rescue (skip with NB_NOSIL=1)
         bool noSil2 = Environment.GetEnvironmentVariable("NB_NOSIL") == "1";
