@@ -156,6 +156,17 @@ The GitHub workflow runs the same script on every push (the `selftest` job): if 
 | `docs/ENV-VARS.md` | every `NB_*` knob: default, effect, when to use |
 | `v3/RESEARCH-necrobit.md` | NecroBit mechanism, evidence-backed |
 
+## How it compares
+
+The field: NETReactorSlayer (Reactor-focused deobfuscator - our stage 2),
+JitUnpacker-Framework (general JIT-hook dump framework, no 4.8, stale),
+Cursed.Reactor (dormant, skips NecroBit), de4dotEx (generic), Krypton (VM
+only - our stage 3/4b). AutoReaktor is the pipeline that composes them,
+adds automated JIT-entry NecroBit recovery with verified typed write-back
+and a runnable-output feedback loop, and proves it with CI and a
+reproducible matrix. Honest comparison with per-capability evidence:
+[COMPETITORS.md](COMPETITORS.md).
+
 ## License
 
 MIT. The third-party tools the pipeline drives (de4dot, NETReactorSlayer, Krypton, dnlib) keep their own licenses and are fetched by `tools/setup.sh`, never redistributed here.
