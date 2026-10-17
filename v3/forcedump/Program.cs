@@ -257,6 +257,21 @@ static class ForceDump
                                 string epath = Path.Combine(edir,
                                     "m_" + m.MetadataToken.ToString("X8") + ".eh");
                                 if (!File.Exists(epath)) File.WriteAllBytes(epath, ebuf);
+                                // catch types by NAME: the runtime's CatchType
+                                // MetadataToken lives in a foreign token space
+                                // (corlib or the decoded context) and is
+                                // meaningless to the base module
+                                var enames = new System.Text.StringBuilder();
+                                for (int ci = 0; ci < ecl.Count; ci++)
+                                {
+                                    var c = ecl[ci];
+                                    enames.Append(ci).Append('\t')
+                                          .Append(c.CatchType.FullName).Append('\n');
+                                }
+                                if (enames.Length > 0)
+                                    File.WriteAllText(Path.Combine(edir,
+                                        "m_" + m.MetadataToken.ToString("X8") + ".ehn"),
+                                        enames.ToString());
                             }
                             string bdir2 = Environment.GetEnvironmentVariable("JITDUMP_DIR");
                             string p2 = Path.Combine(bdir2, "m_" + m.MetadataToken.ToString("X8") + ".bin");

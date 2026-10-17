@@ -247,7 +247,20 @@ class NBIlMerge {
                 flat[k] = BitConverter.ToUInt32(d, 4 + k * 4);
             ehMap[System.IO.Path.GetFileNameWithoutExtension(ef)] = flat;
         }
-        Console.WriteLine("dump eh tables: " + ehMap.Count);
+        var ehNames = new Dictionary<string, Dictionary<int, string>>();
+        foreach (var ef in Directory.GetFiles(a[1], "m_*.ehn"))
+        {
+            var stem = System.IO.Path.GetFileNameWithoutExtension(ef);
+            var nm = new Dictionary<int, string>();
+            foreach (var ln in File.ReadAllLines(ef))
+            {
+                var parts = ln.Split('	');
+                int ix;
+                if (parts.Length == 2 && int.TryParse(parts[0], out ix)) nm[ix] = parts[1];
+            }
+            ehNames[stem] = nm;
+        }
+        Console.WriteLine("dump eh tables: " + ehMap.Count + " (+ " + ehNames.Count + " name tables)");
 
         var byToken = new Dictionary<uint, MethodDef>();
         foreach (var t in mod.GetTypes())
@@ -603,6 +616,10 @@ class NBIlMerge {
                                     (cflags & 3) == 2 ? ExceptionHandlerType.Finally :
                                     (cflags & 3) == 3 ? ExceptionHandlerType.Fault :
                                     ExceptionHandlerType.Catch;
+                                if (stem == "m_06000005")
+                                    Console.WriteLine("    [eh-dbg] c=" + c + " cflags=" + cflags +
+                                        " htype=" + htype + " tryOff=" + tryOff + " hOff=" + hOff +
+                                        " clsTok=" + clsTok.ToString("X8") + " filtOff=" + filtOff);
                                 var eh = new ExceptionHandler(htype);
                                 eh.TryStart = tryStart;
                                 eh.TryEnd = RegionEnd(off2ins, newBody.Instructions, tryOff + tryLen);
@@ -618,6 +635,23 @@ class NBIlMerge {
                                         var resolved = ((ITokenResolver)mod).ResolveToken(clsTok, new GenericParamContext());
                                         eh.CatchType = resolved as ITypeDefOrRef;
                                     } catch { }
+                                    if (eh.CatchType == null) {
+                                        // token came from a foreign space (the
+                                        // runtime's decoded view) - resolve the
+                                        // catch type BY NAME (.ehn files)
+                                        string cname = null;
+                                        Dictionary<int, string> nmm;
+                                        if (ehNames.TryGetValue(stem, out nmm))
+                                            nmm.TryGetValue(c, out cname);
+                                        if (cname != null)
+                                        {
+                                            ITypeDefOrRef f = mod.Find(cname, false);
+                                            if (f == null)
+                                                foreach (var tr in mod.GetTypeRefs())
+                                                    if (tr.FullName == cname) { f = tr; break; }
+                                            eh.CatchType = f;
+                                        }
+                                    }
                                     if (eh.CatchType == null) { ehDropped++; Console.WriteLine("    [eh-drop] catch-type 0x" + clsTok.ToString("X8") + " unresolvable"); continue; }
                                 }
                                 newBody.ExceptionHandlers.Add(eh);

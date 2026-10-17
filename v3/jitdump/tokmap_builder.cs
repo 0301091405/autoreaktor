@@ -75,6 +75,11 @@ class Program
                 uint st = (uint)hit.MDToken.Raw;
                 if (map.TryGetValue(ot, out var prev) && prev != st) continue;  // conflict -> keep first
                 map[ot] = st;
+                // declaring types ride with their methods: catch-type tokens
+                // and member resolution need the type mapped even when the
+                // slayer rename broke the name match
+                uint ott = (uint)t.MDToken.Raw, stt = (uint)hit.DeclaringType.MDToken.Raw;
+                if (!map.ContainsKey(ott)) map[ott] = stt;
                 if (t.FullName != hit.DeclaringType.FullName)
                     renames[t.FullName] = hit.DeclaringType.FullName;
             }
