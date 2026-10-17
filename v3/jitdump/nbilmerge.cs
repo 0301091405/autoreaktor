@@ -694,6 +694,34 @@ class NBIlMerge {
                     // ("Runtime-implemented method with non-zero RVA").
                     if ((m.ImplAttributes & MethodImplAttributes.Runtime) != 0)
                         m.ImplAttributes &= ~MethodImplAttributes.Runtime;
+                    // transplanted instance ctors: decoded bodies lost the
+                    // base-ctor call (the NecroBit runtime did it) - prepend
+                    // ldarg.0 + base .ctor when the body never calls it,
+                    // else the runtime rejects the ctor (ThisUninitReturn)
+                    if (m.Name == ".ctor" && !m.IsStatic &&
+                        m.DeclaringType?.BaseType != null)
+                    {
+                        bool callsBase = false;
+                        foreach (var x in newBody.Instructions)
+                        {
+                            if (x.OpCode == OpCodes.Call && x.Operand is IMethod cm &&
+                                cm.Name == ".ctor" && cm.DeclaringType != null &&
+                                cm.DeclaringType.FullName == m.DeclaringType.BaseType.FullName)
+                            { callsBase = true; break; }
+                        }
+                        if (!callsBase)
+                        {
+                            try
+                            {
+                                var baseCtor = new MemberRefUser(mod, ".ctor",
+                                    MethodSig.CreateInstance(mod.CorLibTypes.Void),
+                                    m.DeclaringType.BaseType);
+                                newBody.Instructions.Insert(0, new Instruction(OpCodes.Call, baseCtor));
+                                newBody.Instructions.Insert(0, new Instruction(OpCodes.Ldarg_0));
+                            }
+                            catch { }
+                        }
+                    }
                     m.Body = newBody;
                     restored++;
                 } else skipped++;
