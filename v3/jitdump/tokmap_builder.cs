@@ -91,7 +91,54 @@ class Program
                 renames[orig.EntryPoint.DeclaringType.FullName] = slay.EntryPoint.DeclaringType.FullName;
         }
 
-        // ---- 2. typedefs ------------------------------------------------
+        // ---- 1b. order-preserving alignment fill -------------------------
+        // Slayer preserves the original's method table ORDER (verified
+        // monotonic on the 7.5.0.0 pair) while removing inlined methods.
+        // Between consecutive anchors, align the survivor subsequence by
+        // normalized signature - this maps methods whose names were
+        // renamed AND whose bodies slayer changed (decoys vs real).
+        var origM = new List<MethodDef>();
+        foreach (var t in orig.GetTypes())
+            foreach (var m in t.Methods) origM.Add(m);
+        origM.Sort((a, b) => a.MDToken.Rid.CompareTo(b.MDToken.Rid));
+        var slayM = new List<MethodDef>();
+        foreach (var t in slay.GetTypes())
+            foreach (var m in t.Methods) slayM.Add(m);
+        slayM.Sort((a, b) => a.MDToken.Rid.CompareTo(b.MDToken.Rid));
+
+        var anchors = map.Where(kv => (kv.Key >> 24) == 0x06 && (kv.Value >> 24) == 0x06)
+                         .Select(kv => (o: (int)(kv.Key & 0xFFFFFF), s: (int)(kv.Value & 0xFFFFFF)))
+                         .OrderBy(a => a.o).ToList();
+        int aligned = 0;
+        for (int ai = 0; ai + 1 < anchors.Count; ai++)
+        {
+            int oL = anchors[ai].o, oR = anchors[ai + 1].o;
+            int sL = anchors[ai].s, sR = anchors[ai + 1].s;
+            // orig segment candidates (between the anchored rids)
+            var segO = origM.Where(m => m.MDToken.Rid > oL && m.MDToken.Rid < oR).ToList();
+            var segS = slayM.Where(m => m.MDToken.Rid > sL && m.MDToken.Rid < sR).ToList();
+            if (segO.Count == 0 || segS.Count == 0) continue;
+            // match by normalized signature; unique candidates only
+            var used = new HashSet<MethodDef>();
+            foreach (var om in segO)
+            {
+                if (map.ContainsKey((uint)om.MDToken.Raw)) continue;
+                string k = om.MethodSig.ToString() + "|" + om.IsStatic;
+                var cands = segS.Where(sm => !used.Contains(sm) &&
+                    sm.MethodSig.ToString() + "|" + sm.IsStatic == k).ToList();
+                if (cands.Count == 1)
+                {
+                    map[(uint)om.MDToken.Raw] = (uint)cands[0].MDToken.Raw;
+                    used.Add(cands[0]);
+                    if (om.DeclaringType.FullName != cands[0].DeclaringType.FullName)
+                        renames[om.DeclaringType.FullName] = cands[0].DeclaringType.FullName;
+                    aligned++;
+                }
+            }
+        }
+
+        // ---- 2. typedefs (after alignment: matched methods bring their
+        // declaring types in, so renamed types still map) -----------------
         var slayTypes = new Dictionary<string, TypeDef>();
         foreach (var t in slay.GetTypes()) slayTypes[t.FullName] = t;
         int typeDefs = 0;
@@ -99,6 +146,15 @@ class Program
         {
             if (slayTypes.TryGetValue(t.FullName, out var hit) && !map.ContainsKey((uint)t.MDToken.Raw))
             { map[(uint)t.MDToken.Raw] = (uint)hit.MDToken.Raw; typeDefs++; }
+        }
+        foreach (var kv in map.ToList())
+        {
+            if ((kv.Key >> 24) != 0x06) continue;
+            var om = orig.ResolveToken(kv.Key) as MethodDef;
+            var sm = slay.ResolveToken(kv.Value) as MethodDef;
+            if (om?.DeclaringType == null || sm?.DeclaringType == null) continue;
+            if (!map.ContainsKey((uint)om.DeclaringType.MDToken.Raw))
+                map[(uint)om.DeclaringType.MDToken.Raw] = (uint)sm.DeclaringType.MDToken.Raw;
         }
 
         // ---- normalizer: renames longest-first --------------------------

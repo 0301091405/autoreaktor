@@ -608,8 +608,19 @@ def main():
             else:
                 pass
             runnable = rc5 is not None and "Unhandled Exception" not in out5
+            # convergence note: when the same top frame repeats without a
+            # cuttable caller, the blocker is inside the method body itself
+            # (e.g. a call to a member the base module no longer has) - that
+            # needs a string/body-level merge, not more call cuts
+            meths = [i["method"] for i in iters]
+            note = None
+            if not runnable and meths and meths[-1] in meths[:-1]:
+                note = ("fixed point: top frame " + meths[-1] +
+                        " repeats - its own body references a member the base "
+                        "module lost; needs body-level merge")
             stage5 = {"stage": "runnable-recovery", "iterations": iters,
                       "final_rc": rc5, "runnable": bool(runnable),
+                      "convergence_note": note,
                       "output_tail": out5[-400:]}
             if runnable:
                 entry["runnable_output"] = str(cur)
