@@ -1,0 +1,187 @@
+{
+ "version": "3.2.0",
+ "files": [
+  {
+   "input": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\verify_forms.exe",
+   "sha256_in": "2780269a3cd01f95c1555c9ed7606d1cb9bcb538f1c490530fec8942d6dfcc13",
+   "reactor_marker": "",
+   "stages": [
+    {
+     "stage": "de4dot",
+     "rc": 0,
+     "secs": 5.2,
+     "log_tail": "verify_forms.exe\r\nDNR decrypterType: V2, method: System.Void Pna0V8G4swDte8LmXS.b0AW9v7axsiQ5DYfUU::o52dxYd9K()\r\nDNR decrypterType: V3, method: System.Void Pna0V8G4swDte8LmXS.b0AW9v7axsiQ5DYfUU::m9UCm3ZbY(System.RuntimeTypeHandle)\r\nDNR decrypterType: V4, method: System.String Pna0V8G4swDte8LmXS.b0AW9v7axsiQ5DYfUU::OZHDFb7pm(System.Int32)\r\nDNR decrypterType: V2, method: System.Void lfy2fwrsrm2Q9bf5D0l.Wi438crGsFm9F7GDPBn::CdirVn6xWt()\r\nRenaming all obfuscated symbols\r\nSaving C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\verify_forms-cleaned.exe\r\n",
+     "partial_output": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\verify_forms-cleaned.exe"
+    },
+    {
+     "stage": "NETReactorSlayer",
+     "rc": 0,
+     "secs": 7.8,
+     "log_tail": "  [INFO] 15/15 Modules loaded...\r\n  [ERROR] An unexpected error occurred during decrypting methods. \u0417\u043d\u0430\u0447\u0435\u043d\u0438\u0435 \u043d\u0435 \u043c\u043e\u0436\u0435\u0442 \u0431\u044b\u0442\u044c \u043d\u0435\u043e\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u043d\u044b\u043c.\r\n\u0418\u043c\u044f \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u0430: array.\r\n  [INFO] 9 Equations resolved.\r\n  [INFO] Anti tamper removed.\r\n  [WARN] Couldn't find anti debugger method.\r\n  [INFO] 13 Proxied calls fixed.\r\n  [INFO] 2 Strings decrypted.\r\n  [ERROR] An unexpected error occurred during decrypting resources. \u0421\u0441\u044b\u043b\u043a\u0430 \u043d\u0430 \u043e\u0431\u044a\u0435\u043a\u0442 \u043d\u0435 \u0443\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442 \u043d\u0430 \u044d\u043a\u0437\u0435\u043c\u043f\u043b\u044f\u0440 \u043e\u0431\u044a\u0435\u043a\u0442\u0430..\r\n  [INFO] 14 Metadata tokens deobfuscated.\r\n  [INFO] 35 Calls to obfuscator types removed.\r\n  [INFO] Renaming obfuscated symbols...\r\n  [INFO] 337 Methods inlined.\r\n  [INFO] Saved to: verify_forms_Slayed.exe\r\n"
+    },
+    {
+     "stage": "de4dot-fallback",
+     "rc": 0,
+     "runnable": true,
+     "final_rc": null,
+     "output_tail": "ALIVE",
+     "note": "slayer output not runnable; de4dot-cleaned promoted"
+    },
+    {
+     "stage": "necrobit-jitdump",
+     "rc": 0,
+     "secs": 17.1,
+     "hook": true,
+     "bodies": 263,
+     "eh_tables": 10,
+     "log_tail": "\n[fd] eh: m_06000038.eh clauses=9\r\n[fd] eh: m_06000039.eh clauses=3\r\n[fd] eh: m_06000043.eh clauses=1\r\n[fd] done: prepared=225 failed=61 skipped=56 eh=9 dumped=285\r\n[fd] manifest: 225 methods\r\ntarget rc=0\r\n[info] forcedump: forcedump.exe (x86, net48)\r\ntarget exited rc=0\r\n[info] scope0: 2 body\r\n[info] scope1: 253 body\r\n[info] scope2: 1 body\r\n[info] scope3: 1 body\r\n[info] scope4: 1 body\r\n[info] scope5: 1 body\r\n[info] scope6: 1 body\r\n[info] scope7: 1 body\r\n[info] scope8: 1 body\r\n[info] scope9: 1 body\r\n[info] scopes.log: 0 body\r\nstatus: hook=OK | body=263 | eh=10 | toplam IL=69257\r\nlog: 270 line\r\n"
+    },
+    {
+     "stage": "necrobit-merge",
+     "rc": 0,
+     "restored": 259,
+     "slayer_out_exe": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_slayer.exe",
+     "module_methods": 430,
+     "merge_base": "original",
+     "trials": [
+      {
+       "base": "original",
+       "rc": 0,
+       "restored": 259,
+       "written": true,
+       "written_path": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_original.exe",
+       "final_rc": 3762504530,
+       "runnable": false,
+       "output_tail": "e>\" \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd. ---> System.AccessViolationException: \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd. \ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd \ufffd\ufffd\ufffd, \ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd.\r\n   \ufffd Pna0V8G4swDte8LmXS.b0AW9v7axsiQ5DYfUU.o52dxYd9K()\r\n   \ufffd .cctor()\r\n   --- \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd ---\n"
+      },
+      {
+       "base": "slayer",
+       "rc": 0,
+       "restored": 44,
+       "written": true,
+       "written_path": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_slayer.exe",
+       "final_rc": 3762504530,
+       "runnable": false,
+       "output_tail": "\ufffd \"Class0\" \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd. ---> System.InvalidProgramException: \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd Common Language Runtime \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd.\r\n   \ufffd Class2.Class5.method_0()\r\n   \ufffd Class2.smethod_18()\r\n   \ufffd Class0..cctor()\r\n   --- \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd ---\r\n   \ufffd Class0.Main()\n"
+      },
+      {
+       "base": "cleaned",
+       "rc": 0,
+       "restored": 4,
+       "written": true,
+       "written_path": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_cleaned.exe",
+       "final_rc": 3762504530,
+       "runnable": false,
+       "output_tail": "\n\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd: System.InvalidProgramException: \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd JIT \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd.\r\n   \ufffd Class0.Main()\n"
+      }
+     ],
+     "secs": 26.5,
+     "log_tail": " unproven matching): 0\r\nstubTok hits: 285 | ldstr rebound: 0\r\n  [dangle-scan] unresolvable operands: 0\r\nnull-wipe: 69\r\n[pass] AntiDebugPass neutralized checks: 0\r\n[pass] ProxyCallPass resolved & redirected proxy stubs: 149\r\n[pass] TamperPass neutralized throws: 0, cctor helper calls noped: 0\r\n[ok] bytes=124928 b64=C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_original.exe.b64\r\n[ok] written: C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_original.exe\r\n"
+    },
+    {
+     "stage": "runnable-recovery",
+     "trials": [
+      {
+       "candidate": "merge-original",
+       "restored": 259,
+       "iterations": [],
+       "final_rc": 3762504530,
+       "runnable": false,
+       "output": null,
+       "output_tail": "\n\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd: System.TypeInitializationException: \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd \"<Module>\" \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd. ---> System.AccessViolationException: \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd. \ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd \ufffd\ufffd\ufffd, \ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd.\r\n   \ufffd Pna0V8G4swDte8LmXS.b0AW9v7axsiQ5DYfUU.o52dxYd9K()\r\n   \ufffd .cctor()\r\n   --- \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd ---\n"
+      },
+      {
+       "candidate": "merge-slayer",
+       "restored": 44,
+       "iterations": [],
+       "final_rc": 3762504530,
+       "runnable": false,
+       "output": null,
+       "output_tail": "\n\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd: System.TypeInitializationException: \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd \"Class0\" \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd. ---> System.InvalidProgramException: \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd Common Language Runtime \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd.\r\n   \ufffd Class2.Class5.method_0()\r\n   \ufffd Class2.smethod_18()\r\n   \ufffd Class0..cctor()\r\n   --- \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd ---\r\n   \ufffd Class0.Main()\n"
+      },
+      {
+       "candidate": "merge-cleaned",
+       "restored": 4,
+       "iterations": [],
+       "final_rc": 3762504530,
+       "runnable": false,
+       "output": null,
+       "output_tail": "\n\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd: System.InvalidProgramException: \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd JIT \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd.\r\n   \ufffd Class0.Main()\n"
+      },
+      {
+       "candidate": "de4dot-cleaned",
+       "restored": 0,
+       "iterations": [],
+       "final_rc": null,
+       "runnable": true,
+       "output": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\verify_forms-cleaned.exe",
+       "output_tail": "ALIVE"
+      },
+      {
+       "candidate": "slayer",
+       "restored": 0,
+       "iterations": [],
+       "final_rc": 3762504530,
+       "runnable": false,
+       "output": null,
+       "output_tail": "sViolationException: \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd. \ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd \ufffd\ufffd\ufffd, \ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd.\r\n   \ufffd System.Runtime.InteropServices.Marshal.WriteInt32(IntPtr ptr, Int32 ofs, Int32 val)\r\n   \ufffd System.Runtime.InteropServices.Marshal.WriteInt32(IntPtr ptr, Int32 val)\r\n   \ufffd Class2.smethod_18()\r\n   \ufffd .cctor()\r\n   --- \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd ---\n"
+      }
+     ],
+     "iterations": [],
+     "final_rc": null,
+     "runnable": true,
+     "convergence_note": null,
+     "output_tail": "ALIVE"
+    }
+   ],
+   "result": "run-recovered-base-only",
+   "cor_flags": "0x3",
+   "bits": "32-bit-required",
+   "probe_executed": true,
+   "reference_run": {
+    "rc": null,
+    "argv": [],
+    "stdout_lines": []
+   },
+   "slayer_output": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\verify_forms_Slayed.exe",
+   "sha256_slayer_output": "7b71546cb39cc5c7ae2db335ae7ad1647477c6c060023ef306990f17b4af6a95",
+   "slayer_output_runnable": false,
+   "fallback_output": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\verify_forms-cleaned.exe",
+   "sha256_fallback_output": "219b772ba12183b277883c5d9dcc4b51a8417be81897e227b3d18b39c5f71dcd",
+   "fallback_output_runnable": true,
+   "necrobit_output": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_original.exe",
+   "sha256_necrobit_output": "45cdf899095efe4119b750cb6ff59538c0c289f08cd43807899437f47cbd0748",
+   "necrobit_output_runnable": false,
+   "necrobit_output_probe": {
+    "final_rc": 3762504530,
+    "output_tail": "e>\" \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd. ---> System.AccessViolationException: \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd. \ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd \ufffd\ufffd\ufffd, \ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd.\r\n   \ufffd Pna0V8G4swDte8LmXS.b0AW9v7axsiQ5DYfUU.o52dxYd9K()\r\n   \ufffd .cctor()\r\n   --- \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd \ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd ---\n"
+   },
+   "runnable_candidates": [
+    {
+     "path": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_original.exe",
+     "source": "merge-original",
+     "restored": 259,
+     "runnable": false
+    },
+    {
+     "path": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_slayer.exe",
+     "source": "merge-slayer",
+     "restored": 44,
+     "runnable": false
+    },
+    {
+     "path": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_cleaned.exe",
+     "source": "merge-cleaned",
+     "restored": 4,
+     "runnable": false
+    }
+   ],
+   "stage5_input": "de4dot-cleaned",
+   "stage5_input_restored": 0,
+   "runnable_output": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\verify_forms-cleaned.exe",
+   "sha256_runnable_output": "219b772ba12183b277883c5d9dcc4b51a8417be81897e227b3d18b39c5f71dcd",
+   "runnable_output_restored": 0,
+   "runnable_body_share": 0.0
+  }
+ ]
+}

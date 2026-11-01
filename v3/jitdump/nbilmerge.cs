@@ -833,8 +833,12 @@ class NBIlMerge {
                 foreach (var ins in mm.Body.Instructions) {
                     if (ins.OpCode == OpCodes.Ldstr) {
                         var sv = ins.Operand as string;
-                        if (sv != null && sv.ToLower().Contains("tamper"))
-                            tamperMethods.Add(mm);
+                        if (sv != null) {
+                            var l = sv.ToLower();
+                            if (l.Contains("tamper") || l.Contains("unregistered") || l.Contains("protected by")
+                                || l.Contains(".net reactor") || l.Contains("eziriz"))
+                                tamperMethods.Add(mm);
+                        }
                     }
                 }
             }

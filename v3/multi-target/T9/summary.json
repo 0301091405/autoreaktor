@@ -1,0 +1,140 @@
+{
+ "target": "verify_forms",
+ "reactor": "C:\\Program Files (x86)\\Eziriz\\.NET Reactor\\dotNET_Reactor.Console.exe",
+ "build": "ok",
+ "protect": {
+  "rc": 0,
+  "path": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\verify_forms.exe",
+  "bytes": 126976
+ },
+ "chain_rc": 0,
+ "chain_tail": "[*] .NET assemblies found: 1\r\n[*] slayer : C:\\OpnCod_Proj\\autoreaktor\\tools\\slayer\\NETReactorSlayer.CLI.exe\r\n[*] krypton: NOT FOUND (stage skipped)\r\n[*] processing verify_forms.exe ...\r\n    -> run-recovered-base-only\r\n[*] done: 1/1 processed. report: C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\report.json\r\n",
+ "stages": [
+  {
+   "stage": "de4dot",
+   "rc": 0,
+   "secs": 5.2,
+   "partial_output": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\verify_forms-cleaned.exe"
+  },
+  {
+   "stage": "NETReactorSlayer",
+   "rc": 0,
+   "secs": 7.8
+  },
+  {
+   "stage": "de4dot-fallback",
+   "rc": 0,
+   "runnable": true,
+   "final_rc": null,
+   "output_tail": "ALIVE",
+   "note": "slayer output not runnable; de4dot-cleaned promoted"
+  },
+  {
+   "stage": "necrobit-jitdump",
+   "rc": 0,
+   "secs": 17.1,
+   "hook": true,
+   "bodies": 263,
+   "eh_tables": 10
+  },
+  {
+   "stage": "necrobit-merge",
+   "rc": 0,
+   "restored": 259,
+   "slayer_out_exe": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_slayer.exe",
+   "module_methods": 430,
+   "merge_base": "original",
+   "trials": [
+    {
+     "base": "original",
+     "rc": 0,
+     "restored": 259,
+     "written": true,
+     "written_path": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_original.exe",
+     "final_rc": 3762504530,
+     "runnable": false,
+     "output_tail": "e>\" ����� ����������. ---> System.AccessViolationException: ������� ������ ��� ������ � ���������� ������. ��� ����� ��������������� � ���, ��� ������ ������ ����������.\r\n   � Pna0V8G4swDte8LmXS.b0AW9v7axsiQ5DYfUU.o52dxYd9K()\r\n   � .cctor()\r\n   --- ����� ����������� ����������� ����� ���������� ---\n"
+    },
+    {
+     "base": "slayer",
+     "rc": 0,
+     "restored": 44,
+     "written": true,
+     "written_path": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_slayer.exe",
+     "final_rc": 3762504530,
+     "runnable": false,
+     "output_tail": "� \"Class0\" ����� ����������. ---> System.InvalidProgramException: ����� ���������� Common Language Runtime ���������� ������������ ���������.\r\n   � Class2.Class5.method_0()\r\n   � Class2.smethod_18()\r\n   � Class0..cctor()\r\n   --- ����� ����������� ����������� ����� ���������� ---\r\n   � Class0.Main()\n"
+    },
+    {
+     "base": "cleaned",
+     "rc": 0,
+     "restored": 4,
+     "written": true,
+     "written_path": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\nbmerge\\verify_forms_nb_cleaned.exe",
+     "final_rc": 3762504530,
+     "runnable": false,
+     "output_tail": "\n�������������� ����������: System.InvalidProgramException: ���������� JIT ��������� ���������� �����������.\r\n   � Class0.Main()\n"
+    }
+   ],
+   "secs": 26.5
+  },
+  {
+   "stage": "runnable-recovery",
+   "trials": [
+    {
+     "candidate": "merge-original",
+     "restored": 259,
+     "iterations": [],
+     "final_rc": 3762504530,
+     "runnable": false,
+     "output": null,
+     "output_tail": "\n�������������� ����������: System.TypeInitializationException: ������������� ���� \"<Module>\" ����� ����������. ---> System.AccessViolationException: ������� ������ ��� ������ � ���������� ������. ��� ����� ��������������� � ���, ��� ������ ������ ����������.\r\n   � Pna0V8G4swDte8LmXS.b0AW9v7axsiQ5DYfUU.o52dxYd9K()\r\n   � .cctor()\r\n   --- ����� ����������� ����������� ����� ���������� ---\n"
+    },
+    {
+     "candidate": "merge-slayer",
+     "restored": 44,
+     "iterations": [],
+     "final_rc": 3762504530,
+     "runnable": false,
+     "output": null,
+     "output_tail": "\n�������������� ����������: System.TypeInitializationException: ������������� ���� \"Class0\" ����� ����������. ---> System.InvalidProgramException: ����� ���������� Common Language Runtime ���������� ������������ ���������.\r\n   � Class2.Class5.method_0()\r\n   � Class2.smethod_18()\r\n   � Class0..cctor()\r\n   --- ����� ����������� ����������� ����� ���������� ---\r\n   � Class0.Main()\n"
+    },
+    {
+     "candidate": "merge-cleaned",
+     "restored": 4,
+     "iterations": [],
+     "final_rc": 3762504530,
+     "runnable": false,
+     "output": null,
+     "output_tail": "\n�������������� ����������: System.InvalidProgramException: ���������� JIT ��������� ���������� �����������.\r\n   � Class0.Main()\n"
+    },
+    {
+     "candidate": "de4dot-cleaned",
+     "restored": 0,
+     "iterations": [],
+     "final_rc": null,
+     "runnable": true,
+     "output": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\verify_forms-cleaned.exe",
+     "output_tail": "ALIVE"
+    },
+    {
+     "candidate": "slayer",
+     "restored": 0,
+     "iterations": [],
+     "final_rc": 3762504530,
+     "runnable": false,
+     "output": null,
+     "output_tail": "sViolationException: ������� ������ ��� ������ � ���������� ������. ��� ����� ��������������� � ���, ��� ������ ������ ����������.\r\n   � System.Runtime.InteropServices.Marshal.WriteInt32(IntPtr ptr, Int32 ofs, Int32 val)\r\n   � System.Runtime.InteropServices.Marshal.WriteInt32(IntPtr ptr, Int32 val)\r\n   � Class2.smethod_18()\r\n   � .cctor()\r\n   --- ����� ����������� ����������� ����� ���������� ---\n"
+    }
+   ],
+   "iterations": [],
+   "final_rc": null,
+   "runnable": true,
+   "convergence_note": null,
+   "output_tail": "ALIVE"
+  }
+ ],
+ "result": "run-recovered-base-only",
+ "runnable_output": "C:\\Users\\zkons\\AppData\\Local\\Temp\\ar_t9_1xa8hocr\\verify_forms_Secure\\_ar_out\\work\\verify_forms\\verify_forms-cleaned.exe",
+ "secs": 545.2
+}

@@ -16,9 +16,8 @@ namespace AutoReaktor.Passes {
                     if (!m.HasBody) continue;
                     var instrs = m.Body.Instructions;
 
-                    // 1. Line surgery: keep string encryption table init / calls, but neuter anti-tamper / loader faults
+                    // 1. Neutralize direct throw instructions
                     for (int i = 0; i < instrs.Count; i++) {
-                        // If we spot a throw or a call to a known tampered helper that faults type-load, make it harmless
                         if (instrs[i].OpCode == OpCodes.Throw) {
                             instrs[i].OpCode = OpCodes.Ret;
                             killed++;
@@ -26,11 +25,13 @@ namespace AutoReaktor.Passes {
                     }
 
                     // 2. Specific Reactor 7.x cctor pattern surgery:
-                    // If cctor calls a method that checks image integrity and throws, replace branch/call with Nop
+                    // If cctor calls a method that checks image integrity and throws, replace branch/call with Nop.
+                    // DO NOT NOP the string decrypter init (qfHgWrlos) - it's required for runtime.
                     for (int i = 0; i < instrs.Count - 1; i++) {
                         if (instrs[i].OpCode == OpCodes.Call && instrs[i].Operand is IMethod meth) {
                             // Check for suspicious internal helper names or patterns characteristic of Reactor AT/loader
-                            if (meth.Name.Contains("smethod_") || meth.Name.Contains("Class3")) {
+                            if (meth.Name.Contains("smethod_") || meth.Name.Contains("Class3")
+                                || meth.Name.Contains("sGXETsu6B") || meth.Name.Contains("m8DF345FF6332D78")) {
                                 // Nop out the call and its result test if followed by Brtrue/Brfalse
                                 instrs[i].OpCode = OpCodes.Nop;
                                 instrs[i].Operand = null;
@@ -38,6 +39,8 @@ namespace AutoReaktor.Passes {
                             }
                         }
                     }
+
+                    
                 }
             }
 
