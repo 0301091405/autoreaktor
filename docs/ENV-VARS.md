@@ -57,6 +57,7 @@ MSVC / Windows SDK locations are discovered at runtime by `msvc_env.py`
 | `NB_MAXWRITE` | — | Integer cap: stop writing bodies after N restores (bisecting a bad dump). |
 | `NB_NOSIL` | off | `1` = skip the null-operand write rescue (the pass that NOPs/removes unresolvable token instructions). |
 | `NB_ATKILL` | off | `1` = opt-in anti-tamper line surgery (ldstr "tamper" → ret). PreserveAll normally makes this unnecessary. |
+| `NB_ALLOW_GENERICS` | off | `1` = do not skip methods whose declaring type has generic parameters (default guard). Measurement switch: it lets those bodies bind so the output can be JIT-tested instead of assumed. On `con48x64` it raises restored 254 → 256 and does not change the failure (still `<Module>.cctor` → `qfHgWrlos`), so the guard is not what blocks that sample. |
 | `NB_B64_OUT` | `<out>.b64` | Where to drop the inert base64 snapshot of the merge product. It is written BEFORE the PE, under its own conventional name, because the closed PE can be denied read access by real-time AV (access denied / EINVAL on `open`) while the plain-text sibling stays readable. Set to a directory AV does not sweep (e.g. a `\\wsl.localhost\...` path) when the merge has to be inspected after the fact. |
 | `NB_KEEP_OUT` | off | `1` = write only the base64 carrier, never the PE itself (analysis-only runs). |
 

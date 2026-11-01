@@ -66,6 +66,15 @@ corpus. The `Class3`1` name quoted in `v3/multi-target/T-MATRIX.md` T9 does not
 exist in the current 7.5 samples (`Class3` appears 0 times), so that specific
 claim is stale and should not be used as the target of new work.
 
+**Measured, not assumed:** the guard can be lifted with `NB_ALLOW_GENERICS=1`.
+Doing so binds two of the four (the other two have no dumped body) and raises
+the write-back from 254 to 256 restored bodies. The product then faults in
+exactly the same place as the 254-body merge — `<Module>.cctor` →
+`qfHgWrlos()` → `BadImageFormatException` (0x8007000B). Generics are therefore
+**not** the blocker for this corpus, and "polishing generics" would buy two
+bodies and no runnable output. The switch stays as a measurement tool, off by
+default.
+
 ## Future Phases
 
 - **T9 hybrid re-measurement**: the T9 row cites `report.json` + hybrid run

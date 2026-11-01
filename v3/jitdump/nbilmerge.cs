@@ -453,8 +453,12 @@ class NBIlMerge {
             }
             // generic types load-validate every member; a body written with
             // Object-only locals can fail that check — leave generics to the
-            // reflection-equivalence pass until locals carry real types
-            if (m != null && m.DeclaringType != null && m.DeclaringType.HasGenericParameters)
+            // reflection-equivalence pass until locals carry real types.
+            // NB_ALLOW_GENERICS=1 is a measurement switch, not a default: it
+            // lets the write-back happen so the resulting module can be
+            // JIT-validated method by method instead of being guessed about.
+            if (m != null && m.DeclaringType != null && m.DeclaringType.HasGenericParameters
+                && Environment.GetEnvironmentVariable("NB_ALLOW_GENERICS") != "1")
             { skipped++; if (skipped < 4) Console.WriteLine("  [skip] generic: " + m.DeclaringType.FullName); continue; }
             try {
                 if (i < 3) Console.WriteLine("  [dbg" + i + "] try-entered m=" + (m == null ? "null" : m.Name.String));
