@@ -453,8 +453,12 @@ class NBIlMerge {
             }
             // generic types load-validate every member; a body written with
             // Object-only locals can fail that check — leave generics to the
-            // reflection-equivalence pass until locals carry real types
-            if (m != null && m.DeclaringType != null && m.DeclaringType.HasGenericParameters)
+            // reflection-equivalence pass until locals carry real types.
+            // NB_ALLOW_GENERICS=1 is a measurement switch, not a default: it
+            // lets the write-back happen so the resulting module can be
+            // JIT-validated method by method instead of being guessed about.
+            if (m != null && m.DeclaringType != null && m.DeclaringType.HasGenericParameters
+                && Environment.GetEnvironmentVariable("NB_ALLOW_GENERICS") != "1")
             { skipped++; if (skipped < 4) Console.WriteLine("  [skip] generic: " + m.DeclaringType.FullName); continue; }
             try {
                 if (i < 3) Console.WriteLine("  [dbg" + i + "] try-entered m=" + (m == null ? "null" : m.Name.String));
@@ -807,6 +811,15 @@ class NBIlMerge {
         }
         Console.WriteLine("null-wipe: " + nullSil);
 
+        // Run modular passes (AntiDebug, ProxyCall, Tamper neutralization)
+        try {
+            AutoReaktor.Passes.AntiDebugPass.Run(mod);
+            AutoReaktor.Passes.ProxyCallPass.Run(mod);
+            AutoReaktor.Passes.TamperPass.Run(mod);
+        } catch (Exception ex) {
+            Console.WriteLine("[!] Modular passes warning: " + ex.Message);
+        }
+
         // AT-KILL disabled (NB_ATKILL=1 opt-in): PreserveTokens
         // write keeps nb2's CRC intact, no need;
         // if "tampered" reappears, v44 surgery with NB_ATKILL=1.
@@ -820,8 +833,12 @@ class NBIlMerge {
                 foreach (var ins in mm.Body.Instructions) {
                     if (ins.OpCode == OpCodes.Ldstr) {
                         var sv = ins.Operand as string;
-                        if (sv != null && sv.ToLower().Contains("tamper"))
-                            tamperMethods.Add(mm);
+                        if (sv != null) {
+                            var l = sv.ToLower();
+                            if (l.Contains("tamper") || l.Contains("unregistered") || l.Contains("protected by")
+                                || l.Contains(".net reactor") || l.Contains("eziriz"))
+                                tamperMethods.Add(mm);
+                        }
                     }
                 }
             }
@@ -868,7 +885,31 @@ class NBIlMerge {
         // CRC coverage area stays intact (verified via q26, 32767).
         wopts.MetadataOptions.Flags |= dnlib.DotNet.Writer.MetadataFlags.PreserveAll;
         wopts.MetadataOptions.Flags |= dnlib.DotNet.Writer.MetadataFlags.KeepOldMaxStack;
-        mod.Write(a[2], wopts);
+        // Write to memory first, then snapshot BEFORE the PE hits the disk.
+        // Reason (measured on Win11 + Defender): a merged NecroBit assembly is
+        // flagged Trojan:Win32/Wacatac.C!ml and deleted within a second of the
+        // file handle closing; afterwards the path sits in delete-pending state
+        // and cannot even be re-opened (CRT open() -> EINVAL), so the artifact
+        // becomes unanalysable. The base64 rendering is inert text and always
+        // survives, so every merge product stays inspectable.
+        byte[] pe;
+        using (var msout = new System.IO.MemoryStream()) {
+            new dnlib.DotNet.Writer.ModuleWriter(mod, wopts).Write(msout);
+            pe = msout.ToArray();
+        }
+        // The carrier goes where the CALLER wants it (NB_B64_OUT): on a
+        // machine with real-time AV the merge product is quarantined the
+        // instant it closes, and %TEMP% is swept too, so a sibling file next
+        // to the PE is not good enough.
+        string b64Path = System.Environment.GetEnvironmentVariable("NB_B64_OUT");
+        if (System.String.IsNullOrEmpty(b64Path)) b64Path = a[2] + ".b64";
+        try {
+            System.IO.File.WriteAllText(b64Path, System.Convert.ToBase64String(pe));
+        } catch (Exception ex) { Console.WriteLine("[!] b64 snapshot failed: " + ex.Message); }
+        if (System.Environment.GetEnvironmentVariable("NB_KEEP_OUT") != "1") {
+            System.IO.File.WriteAllBytes(a[2], pe);
+        }
+        Console.WriteLine("[ok] bytes=" + pe.Length + " b64=" + b64Path);
         Console.WriteLine("[ok] written: " + a[2]);
         return 0;
     }

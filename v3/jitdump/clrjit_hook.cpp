@@ -302,15 +302,40 @@ static void markerLine(const char* msg) {
 }
 
 static bool installHook() {
+    // Diagnostics: the deferred thread calls this up to 60000 times, so each
+    // failure reason is written only for the first few calls (x64 debugging
+    // previously produced a silent failure: attach line only, no reason).
+    static volatile long tries = 0;
+    const bool verbose = (_InterlockedIncrement(&tries) <= 3);
     HMODULE h = GetModuleHandleW(L"clrjit.dll");
-    if (!h) h = GetModuleHandleW(L"mscorjit.dll");
+    const char* hsrc = h ? "loaded-clrjit" : "";
+    if (!h) {
+        h = GetModuleHandleW(L"mscorjit.dll");
+        if (h) hsrc = "loaded-mscorjit";
+    }
     if (!h) {
         // bare-name search misses the Framework JIT: it lives under
         // \Microsoft.NET\Framework[64]\v4.0.30319, outside the DLL search
         // path. Only fall back to the full path inside a FRAMEWORK process —
         // the discriminator is clr.dll (the Framework engine; CoreCLR never
         // loads it). Without the gate a .NET Core process would get the
-        // wrong JIT hooked and compile invisibly.
+        // wrong JIT hooked and compile invisibly. NOTE: at attach time the
+        // load is triggered by an APC that runs while mscoree is already in
+        // the process but clr.dll is not yet - so mscoree is the honest
+        // discriminator here, and the retry loop covers the CoreCLR case.
+        if (verbose) {
+            char msg[160];
+#ifdef _WIN64
+            const char* jitPath = "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\clrjit.dll";
+#else
+            const char* jitPath = "C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\clrjit.dll";
+#endif
+            std::snprintf(msg, sizeof(msg), "install: probe clr.dll=%p mscoree.dll=%p clrjit=%p (%s)",
+                          (void*)GetModuleHandleW(L"clr.dll"),
+                          (void*)GetModuleHandleW(L"mscoree.dll"),
+                          (void*)GetModuleHandleW(L"clrjit.dll"), jitPath);
+            markerLine(msg);
+        }
         if (GetModuleHandleW(L"clr.dll")) {
             h = LoadLibraryW(
 #ifdef _WIN64
@@ -319,9 +344,16 @@ static bool installHook() {
                 L"C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\clrjit.dll"
 #endif
             );
+            if (h) hsrc = "framework-path";
+            else if (verbose) {
+                char msg[128];
+                std::snprintf(msg, sizeof(msg), "install: framework clrjit load failed err=%lu",
+                              GetLastError());
+                markerLine(msg);
+            }
         }
-        if (!h) h = LoadLibraryW(L"clrjit.dll");
-        if (!h) h = LoadLibraryW(L"mscorjit.dll");
+        if (!h) { h = LoadLibraryW(L"clrjit.dll"); if (h) hsrc = "bare-clrjit"; }
+        if (!h) { h = LoadLibraryW(L"mscorjit.dll"); if (h) hsrc = "bare-mscorjit"; }
     }
     if (!h) {
         static long attempts = 0;
@@ -331,17 +363,34 @@ static bool installHook() {
     g_getJit = (GetJitFn)GetProcAddress(h, "getJit");
     if (!g_getJit) { markerLine("install: getJit export missing"); return false; }
     void* jit = g_getJit();
-    if (!jit) return false;
+    if (!jit) {
+        if (verbose) {
+            char msg[128];
+            std::snprintf(msg, sizeof(msg), "install: getJit() -> null (src=%s h=%p)",
+                          hsrc, (void*)h);
+            markerLine(msg);
+        }
+        return false;
+    }
     void** vt = *(void***)jit;
+    if (!vt) { if (verbose) markerLine("install: vtable null"); return false; }
     DWORD op;
-    if (!VirtualProtect(&vt[0], sizeof(void*), PAGE_EXECUTE_READWRITE, &op)) return false;
+    if (!VirtualProtect(&vt[0], sizeof(void*), PAGE_EXECUTE_READWRITE, &op)) {
+        if (verbose) {
+            char msg[160];
+            std::snprintf(msg, sizeof(msg), "install: VirtualProtect fail vt=%p err=%lu",
+                          (void*)vt, GetLastError());
+            markerLine(msg);
+        }
+        return false;
+    }
     g_origCompile = vt[0];
     vt[0] = (void*)&HookedCompileMethod;
     VirtualProtect(&vt[0], sizeof(void*), op, &op);
     {
         char mp[MAX_PATH]; char msg[128];
-        std::snprintf(msg, sizeof(msg), "HOOK-OK pid=%lu clrjit=%p orig=%p",
-            GetCurrentProcessId(), (void*)h, g_origCompile);
+        std::snprintf(msg, sizeof(msg), "HOOK-OK pid=%lu clrjit=%p (%s) jit=%p vt=%p orig=%p",
+            GetCurrentProcessId(), (void*)h, hsrc, jit, (void*)vt, g_origCompile);
         std::snprintf(mp, sizeof(mp), "%s\\marker.txt", g_outDir);
         FILE* f = nullptr;
         if (fopen_s(&f, mp, "ab") == 0) { fputs(msg, f); fputc('\n', f); fclose(f); }

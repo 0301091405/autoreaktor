@@ -153,6 +153,37 @@ def find_tool(name: str) -> str:
     return ""
 
 
+def kill_tree(p):
+    """Terminate a probe/target AND anything it spawned.
+
+    `Popen.kill()` only reaps the direct child. A GUI target that starts
+    worker processes, or one that outlives a parent killed from outside
+    (Windows does not cascade termination), would keep running and hold
+    handles - a leftover `*-cleaned.exe` from an aborted matrix run did
+    exactly that. On Windows /T takes the whole tree down; elsewhere the
+    process group is used.
+    """
+    if p is None:
+        return
+    try:
+        p.kill()
+    except Exception:
+        pass
+    try:
+        p.wait(timeout=10)
+        return
+    except Exception:
+        pass
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)],
+                           capture_output=True, timeout=30)
+        else:
+            os.killpg(os.getpgid(p.pid), 9)
+    except Exception:
+        pass
+
+
 def run_stage(cmd, cwd, timeout=600, env=None, probe=False):
     t0 = time.time()
     if probe:
@@ -161,9 +192,13 @@ def run_stage(cmd, cwd, timeout=600, env=None, probe=False):
         # pipes: a child that fills the OS pipe buffer would otherwise block
         # on write and be misread as "still alive".
         acc = []
+        popen_kw = {}
+        if os.name != "nt":
+            popen_kw["start_new_session"] = True
         try:
             p = subprocess.Popen(cmd, cwd=str(cwd), env=env,
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 **popen_kw)
 
             def _drain(pipe):
                 try:
@@ -179,22 +214,157 @@ def run_stage(cmd, cwd, timeout=600, env=None, probe=False):
                 th1.join(5); th2.join(5)
                 return rc, b"".join(acc).decode("utf-8", "replace"), time.time() - t0
             except subprocess.TimeoutExpired:
-                p.kill()
-                try:
-                    p.wait(timeout=10)
-                except Exception:
-                    pass
+                kill_tree(p)
                 return None, "ALIVE", time.time() - t0
         except Exception as e:
             return 125, f"SPAWN-ERROR {e}", time.time() - t0
+    # blocking run: same tree-kill discipline, so a run that overruns cannot
+    # leave the target (or its children) behind
+    popen_kw = {}
+    if os.name != "nt":
+        popen_kw["start_new_session"] = True
     try:
-        r = subprocess.run(cmd, cwd=str(cwd), capture_output=True, timeout=timeout, env=env)
-        out = (r.stdout or b"") + (r.stderr or b"")
-        return r.returncode, out.decode("utf-8", "replace"), time.time() - t0
+        p = subprocess.Popen(cmd, cwd=str(cwd), env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             **popen_kw)
+        out, _ = p.communicate(timeout=timeout)
+        return p.returncode, (out or b"").decode("utf-8", "replace"), time.time() - t0
     except subprocess.TimeoutExpired:
+        kill_tree(p)
         return 124, "TIMEOUT", time.time() - t0
     except Exception as e:
         return 125, f"SPAWN-ERROR {e}", time.time() - t0
+
+
+# Probe arguments handed to every candidate AND to the protected reference:
+# the behaviour oracle only works when both sides run the same command line.
+# The corpus exposes its payload behind an argument (matrix.py sets
+# AR_PROBE_ARGS=dump), so an argument-less probe can miss whole code paths.
+PROBE_ARGS = [a for a in os.environ.get("AR_PROBE_ARGS", "").split() if a]
+# non-empty stdout lines the protected target produced under PROBE_ARGS
+_REF_LINES = []
+# set by set_reference(): the protected target blocked instead of exiting
+_REF_ALIVE = False
+# grace window for an alive-shaped (GUI) probe - a blocking target will never
+# exit, so a full console timeout per candidate is pure loss
+ALIVE_GRACE = 10
+# True when the protected target itself never exits (GUI shape). Every probe
+# of such a target is judged by "still alive after the grace window" instead
+# of waiting the full console timeout - otherwise a single GUI cell burns
+# ~60 s per candidate probe and the matrix stops finishing at all.
+_REF_ALIVE = False
+ALIVE_GRACE = float(os.environ.get("AR_ALIVE_GRACE", "8"))
+
+# --- probe verdicts ---------------------------------------------------------
+# A probe must NEVER be judged by an English-only string: the CLR prints its
+# unhandled-exception banner in the HOST's locale (ru-RU here), so a crashed
+# x64 recovery was previously read as "still running / runnable". Classify by
+# the OS exit status first (locale-proof) and fall back to the trace text.
+_CRASH_CODES = (0xE0434352,   # CLR unhandled managed exception
+                0xC0000005,   # STATUS_ACCESS_VIOLATION
+                0xC0000094,   # STATUS_INTEGER_DIVIDE_BY_ZERO
+                0xC00000FD,   # STATUS_STACK_OVERFLOW
+                0xC0000409,   # STATUS_STACK_BUFFER_OVERRUN
+                0x80131623)   # CLR fatal (fatal execution engine error)
+_TEXT_FRAME = re.compile(r"^\s*(?:at|[вvу])\s+([^\s(]+)")
+_EXC_TEXT = re.compile(r"(?:Unhandled Exception|Необработанное исключение|"
+                       r"Unbehandelte Ausnahme|Exception non gérée|"
+                       r"TypeInitializationException|AccessViolationException|"
+                       r"NullReferenceException|InvalidProgramException|"
+                       r"BadImageFormatException|MissingMethodException)")
+
+
+def probe_crashed(rc, out):
+    """True when the probe process died with an exception (or is a crash).
+
+    rc is None only for the still-alive (GUI) case and is NOT a failure.
+    """
+    if rc is None:
+        return False
+    u = rc & 0xFFFFFFFF
+    if u in _CRASH_CODES or u >= 0xC0000000:
+        return True
+    if rc != 0 and _EXC_TEXT.search(out or ""):
+        return True
+    return False
+
+
+def probe_ok(rc, out):
+    """Positive runnable verdict: the file ran and behaved like the original.
+
+    Covers both target shapes without knowing their marker text:
+      * still alive (rc None, GUI blocking)                -> pass
+      * exited non-zero but said something and did NOT die
+        with an exception (this harness' Main returns 1)   -> pass
+      * exited 0                                           -> pass
+      * died with an exception, or fell silent             -> fail
+
+    The BEHAVIOUR ORACLE is the protected target itself: _REF_LINES holds the
+    non-empty stdout lines the original produced under the same probe
+    arguments, and a candidate must reproduce every one of them. Without it a
+    candidate that merely prints its banner before faulting on a later code
+    path passes as recovered - exactly how an arg-sensitive Main (one that
+    only dereferences its payload when handed "dump") looked "runnable"
+    while it still crashed with InvalidProgramException.
+    """
+    if rc is None:
+        return True
+    if probe_crashed(rc, out):
+        return False
+    o = out or ""
+    if _REF_LINES:
+        return all(line in o for line in _REF_LINES)
+    return bool(o.strip())
+
+
+def probe_argv(path):
+    """Probe command line: the same arguments the reference run used."""
+    return [str(path)] + PROBE_ARGS
+
+
+def probe_timeout():
+    """How long a probe waits before calling the process alive.
+
+    A GUI target never exits on its own, so waiting the console timeout on
+    every candidate is pure loss. The grace window is only shortened when the
+    PROTECTED REFERENCE itself never exited, which is exactly the evidence
+    that the shape is a blocking GUI.
+    """
+    return ALIVE_GRACE if _REF_ALIVE else 60
+
+
+def set_reference(rc, out):
+    """Register the protected target's own output as the behaviour oracle."""
+    global _REF_LINES, _REF_ALIVE
+    _REF_ALIVE = rc is None
+    if rc is None or probe_crashed(rc, out):
+        _REF_LINES = []
+        return
+    _REF_LINES = [l.strip() for l in (out or "").splitlines() if l.strip()]
+
+
+def probe_top_frame(out):
+    """First non-BCL frame name from a trace (locale-independent).
+
+    The CLR localizes the banner but not the frame lines themselves; ru-RU
+    prints them as "   в Type.Method()" where en-US prints "   at Type.Method()".
+    """
+    for line in (out or "").splitlines():
+        m = _TEXT_FRAME.match(line)
+        if not m:
+            continue
+        full = m.group(1).strip()
+        # the exception header line ("Необработанное исключение: System...")
+        # also matches the frame regex in ru-RU - skip anything that is a
+        # type name only (no dot-separated member)
+        if full.startswith("System.") or full.startswith("Microsoft."):
+            continue
+        if "." not in full:
+            continue
+        if full.endswith(":") or full.endswith("Exception"):
+            continue
+        return full
+    return None
 
 
 def necrobit_tools() -> dict:
@@ -298,6 +468,18 @@ def main():
                 if sib.exists():
                     shutil.copy2(sib, work / sib.name)
 
+        # BEHAVIOUR ORACLE. Run the PROTECTED binary itself first and record
+        # what it prints: every later "does it still work" answer is measured
+        # against that, not against a guess about marker text. This also
+        # records the packer's own baseline (it runs fine, it is the packer).
+        entry["probe_executed"] = True
+        ref_rc, ref_out, _ = run_stage(probe_argv(base), cwd=work,
+                                       timeout=ALIVE_GRACE, probe=True)
+        set_reference(ref_rc, ref_out)
+        entry["reference_run"] = {"rc": ref_rc,
+                                  "argv": PROBE_ARGS,
+                                  "stdout_lines": list(_REF_LINES)}
+
         # ---- stage 1: de4dot (partial pre-clean, relative path invocation)
         de4dot = find_tool("de4dot.exe")
         if de4dot:
@@ -331,17 +513,32 @@ def main():
         # fallback, verified on R5 where de4dot-cleaned GUI runs.
         if slayer_out:
             entry["probe_executed"] = True
-            fr_rc, fr_out, _ = run_stage([str(work / Path(slayer_out).name)],
-                                         cwd=work, timeout=60, probe=True)
-            slayer_ok = fr_rc == 0 or fr_rc is None  # None = still alive = GUI blocking
+            fr_rc, fr_out, _ = run_stage(probe_argv(work / Path(slayer_out).name),
+                                         cwd=work, timeout=probe_timeout(), probe=True)
+            slayer_ok = probe_ok(fr_rc, fr_out)
             entry["slayer_output_runnable"] = bool(slayer_ok)
             if not slayer_ok:
                 cleaned = list(work.glob("*cleaned*"))
                 if cleaned:
                     entry["fallback_output"] = str(cleaned[0])
                     entry["sha256_fallback_output"] = sha256(cleaned[0])
+                    # PROBE THE FALLBACK TOO. Promoting de4dot-cleaned on the
+                    # strength of the slayer probe alone was a silent false
+                    # positive: it was never executed, and its baseline (the
+                    # protected binary) already prints its banner, so "some
+                    # output" is packer chatter, not evidence.
+                    fb_rc, fb_out, _ = run_stage(probe_argv(cleaned[0]),
+                                                 cwd=work, timeout=probe_timeout(), probe=True)
+                    fb_ok = probe_ok(fb_rc, fb_out)
+                    entry["fallback_output_runnable"] = bool(fb_ok)
                     entry["stages"].append({"stage": "de4dot-fallback", "rc": 0,
-                                            "note": "slayer output not runnable; de4dot-cleaned promoted"})
+                                            "runnable": bool(fb_ok),
+                                            "final_rc": fb_rc,
+                                            "output_tail": (fb_out or "")[-300:],
+                                            "note": "slayer output not runnable; "
+                                                    "de4dot-cleaned promoted"
+                                                    + ("" if fb_ok else
+                                                       " (also not runnable)")})
         else:
             cleaned = list(work.glob("*cleaned*"))
             if cleaned:
@@ -456,18 +653,27 @@ def main():
                         bases = [("original", base)]
                         if entry.get("slayer_output"):
                             bases.append(("slayer", Path(entry["slayer_output"])))
+                        # THIRD BASE: the de4dot-cleaned module. It is the one
+                        # that still STARTS (its cctors were rewritten, not
+                        # cut), so it can carry the dumped real bodies where
+                        # neither the pristine original nor the slayer module
+                        # can. This is the body-level merge the convergence
+                        # note asks for, applied to a runnable base.
+                        if (entry.get("fallback_output")
+                                and Path(entry["fallback_output"]).exists()):
+                            bases.append(("cleaned", Path(entry["fallback_output"])))
                         best = None
                         trial_logs = []
                         for bname, bpath in bases:
                             tout = outdir / (src.stem + "_nb_" + bname + src.suffix)
                             tenv = None
-                            if bname == "slayer":
+                            if bname != "original":
                                 # slayer can shift rids and rename symbols —
                                 # build a FULL token translation map (all
                                 # tables: methods by name/body-fingerprint/
                                 # entry anchor, typerefs, fields, memberrefs,
                                 # typespecs, standalonesigs, methodspecs)
-                                mapf = outdir / "tokmap.txt"
+                                mapf = outdir / ("tokmap_" + bname + ".txt")
                                 tbuild = nb_tools["dir"] / "bin" / "Release" / "tokmap_builder.exe"
                                 if not tbuild.exists():
                                     run_stage(["dotnet", "build",
@@ -486,14 +692,30 @@ def main():
                                                         cwd=work, timeout=900, env=tenv)
                             m = re.search(r"method actually written:\s*(\d+)", out2)
                             mres = int(m.group(1)) if m else -1
+                            # PROBE EVERY TRIAL. A merge product is a claim
+                            # until it is executed: the "restored" count says
+                            # how many bodies were written, not whether the
+                            # module still starts.
+                            trc, trun = None, ""
+                            if tout.exists():
+                                trc, trun, _ = run_stage(probe_argv(tout), cwd=outdir,
+                                                         timeout=probe_timeout(), probe=True)
+                            tout_probe_ok = bool(tout.exists() and probe_ok(trc, trun))
                             trial_logs.append({"base": bname, "rc": rc2, "restored": mres,
                                                "written": tout.exists(),
-                                               "written_path": str(tout) if tout.exists() else None})
+                                               "written_path": str(tout) if tout.exists() else None,
+                                               "final_rc": trc,
+                                               "runnable": tout_probe_ok,
+                                               "output_tail": (trun or "")[-300:]})
+                            # The merge stage reports the BODY-RICHEST product
+                            # (that is the recovery claim); picking between
+                            # runnable candidates is stage 5's job, and it
+                            # sees every trial via `trials`.
                             if tout.exists() and (best is None or mres > best[0]):
-                                best = (mres, bname, tout, rc2, out2, dur2)
+                                best = (mres, bname, tout, rc2, out2, dur2, tout_probe_ok)
                         if best is None:
-                            best = (-1, bases[0][0], None, 1, "no merge output", 0)
-                        mrestored, base_used, outexe, rc2, out2, dur2 = best
+                            best = (-1, bases[0][0], None, 1, "no merge output", 0, False)
+                        mrestored, base_used, outexe, rc2, out2, dur2, _best_probe = best
                         mm = re.search(r"modul MethodDef:\s*(\d+)", out2)
                         module_methods = int(mm.group(1)) if mm else None
                         # keep the slayer-base product even when it loses the
@@ -503,6 +725,7 @@ def main():
                                                if t["base"] == "slayer" and t.get("written_path")), None)
                         entry["stages"].append({"stage": "necrobit-merge", "rc": rc2,
                                                 "restored": mrestored,
+                                                "slayer_out_exe": slayer_out_exe,
                                                 "module_methods": module_methods,
                                                 "merge_base": base_used,
                                                 "trials": trial_logs,
@@ -512,10 +735,20 @@ def main():
                             entry["necrobit_output"] = str(outexe)
                             entry["sha256_necrobit_output"] = sha256(outexe)
                             entry["probe_executed"] = True
-                            prc, pout, _ = run_stage([str(outexe)], cwd=outdir,
-                                                     timeout=60, probe=True)
-                            nb_runnable = prc == 0 or prc is None
+                            prc, pout, _ = run_stage(probe_argv(outexe), cwd=outdir,
+                                                     timeout=probe_timeout(), probe=True)
+                            nb_runnable = probe_ok(prc, pout)
                             entry["necrobit_output_runnable"] = bool(nb_runnable)
+                            entry["necrobit_output_probe"] = {"final_rc": prc,
+                                                              "output_tail": (pout or "")[-300:]}
+                            # hand stage 5 every merge product, not just the
+                            # one with the biggest restored count
+                            entry["runnable_candidates"] = [
+                                {"path": t["written_path"],
+                                 "source": "merge-" + t["base"],
+                                 "restored": t.get("restored"),
+                                 "runnable": bool(t.get("runnable"))}
+                                for t in trial_logs if t.get("written_path")]
                             if nb_runnable and entry["result"] in ("incomplete", "slayer-clean"):
                                 entry["result"] = "necrobit-recovered"
                             elif entry["result"] == "incomplete":
@@ -556,58 +789,114 @@ def main():
         # Marshal.* into the (rewritten) image. The failure surfaces one
         # method at a time, so the fix is feedback-driven: run, parse the
         # top frame from the stack trace, nop every cctor call to it, repeat.
-        # Success = the program exits without an unhandled exception.
+        # Success = the process neither dies with an exception nor falls
+        # silent: the verdict is the OS exit status first (the CLR banner is
+        # localized, so an English-only text probe reads a crash as success).
         if args.deep and slayer_out and nb_tools["ccfix_exe"].exists():
-            # hybrid-aware input: when the winning merge base was the slayer
-            # module, the merged PE already carries the real bodies AND the
-            # decrypted strings — start the loop from there
-            slayer_merged = next((st.get("slayer_out_exe") for st in entry["stages"]
-                                  if st.get("stage") == "necrobit-merge"), None)
-            if slayer_merged and Path(slayer_merged).exists():
-                src5 = Path(slayer_merged)   # hybrid: real bodies + decrypted strings
-            else:
-                src5 = Path(entry["slayer_output"])
+            # Input preference for the feedback loop. Candidates are ranked by
+            # EVIDENCE (a probe that actually executed the file), never by
+            # restored-body count: a merged PE carrying 251 real bodies that
+            # still faults is worth less than one that opens and runs.
+            merged_stage = next((st for st in entry["stages"]
+                                 if st.get("stage") == "necrobit-merge"), None)
+            # Build candidates from the MERGE TRIAL RECORDS, not from the
+            # "best product" pointer: every written merge (original-base,
+            # slayer-base, cleaned-base) is its own recovery class, and the
+            # body-rich original-base merge is exactly the one that needs the
+            # cctor feedback loop. Labelling the single best-product path
+            # "merge-original" hid the 254-body merge behind the 2-body shell.
+            cands = []
+            seen_paths = set()
+            for t in (merged_stage or {}).get("trials", []):
+                p = t.get("written_path")
+                if not p or p in seen_paths:
+                    continue
+                seen_paths.add(p)
+                cands.append(("merge-" + (t.get("base") or "?"), Path(p),
+                              t.get("restored") or 0))
+            if entry.get("necrobit_output") and entry["necrobit_output"] not in seen_paths:
+                seen_paths.add(entry["necrobit_output"])
+                cands.append(("merge-best", Path(entry["necrobit_output"]),
+                              merged_stage.get("restored") if merged_stage else 0))
+            if entry.get("fallback_output_runnable") and entry.get("fallback_output"):
+                # the slayer output crashes and the promoted de4dot-cleaned
+                # candidate PROBED OK: that is the runnable-class input, not
+                # the crashed slayer file. It carries no recovered bodies of
+                # its own - recorded as 0, so stage 5 can tell a real
+                # body-recovery apart from "a runnable shell was found".
+                cands.append(("de4dot-cleaned", Path(entry["fallback_output"]), 0))
+            cands.append(("slayer", Path(entry["slayer_output"]), 0))
             work5 = work / "runfix"
             work5.mkdir(exist_ok=True)
-            cur = work5 / src5.name
-            shutil.copy2(src5, cur)
-            iters = []
-            gen = 0
-            rc5 = None
-            out5 = ""
-            for it in range(6):
+            # EVERY candidate goes through the free-call feedback loop, richest
+            # body count FIRST. The point of the loop is to make the body-rich
+            # merge runnable (the x64 class needed exactly this: the 254-body
+            # merge carries the real Main, the 2-body cleaned shell only
+            # prints its banner). Stopping at the first candidate that merely
+            # opens would settle for the shell and never try the real thing.
+            trials5 = []
+            for nm, p, rs in sorted(cands, key=lambda c: -(c[2] or 0)):
+                if p is None or not Path(p).exists():
+                    continue
+                # CHEAP PATH FIRST: a candidate that already runs needs no
+                # ccfix loop at all. Probing before copying keeps the loop
+                # budget for the candidates that actually fault.
                 entry["probe_executed"] = True
-                rc5, out5, _ = run_stage([str(cur)], cwd=work5,
-                                         timeout=60, probe=False)
-                if "Unhandled Exception" not in out5:
-                    break
-                meth = None
-                for l in out5.splitlines():
-                    l = l.strip()
-                    if not l.startswith("at "):
-                        continue
-                    full = l[3:].split("(")[0].strip()
-                    # skip BCL frames — the culprit is always the protected
-                    # module's own method
-                    if full.startswith("System.") or full.startswith("Microsoft."):
-                        continue
-                    meth = full.split(".")[-1].strip()
-                    break
-                if not meth:
-                    break
-                gen += 1
-                nxt = work5 / (src5.stem + f"_r{gen}" + src5.suffix)
-                rc, outc, _ = run_stage([str(nb_tools["ccfix_exe"]), "fix",
-                                         str(cur), str(nxt), meth, "all"],
-                                        cwd=work5, timeout=300)
-                iters.append({"method": meth, "rc": rc,
-                              "log_tail": outc[-200:]})
-                if rc != 0:
-                    break
-                cur = nxt
-            else:
-                pass
-            runnable = rc5 is not None and "Unhandled Exception" not in out5
+                q_rc, q_out, _ = run_stage(probe_argv(p), cwd=work5,
+                                           timeout=probe_timeout(), probe=True)
+                if probe_ok(q_rc, q_out):
+                    trials5.append({"candidate": nm, "restored": rs,
+                                    "iterations": [], "final_rc": q_rc,
+                                    "runnable": True, "output": str(p),
+                                    "output_tail": (q_out or "")[-400:]})
+                    continue
+                cur = work5 / (nm + "_" + Path(p).name)
+                shutil.copy2(p, cur)
+                iters = []
+                rc5, out5 = q_rc, q_out
+                for it in range(6):
+                    entry["probe_executed"] = True
+                    rc5, out5, _ = run_stage(probe_argv(cur), cwd=work5,
+                                             timeout=probe_timeout(), probe=True)
+                    if probe_ok(rc5, out5):
+                        break
+                    # the culprit is always the protected module's own top
+                    # frame; probe_top_frame skips BCL frames and the
+                    # localized exception header line
+                    full = probe_top_frame(out5) or ""
+                    meth = full.split(".")[-1].strip() if full else None
+                    if not meth:
+                        break
+                    nxt = work5 / (cur.stem + f"_r{len(iters) + 1}" + cur.suffix)
+                    rc, outc, _ = run_stage([str(nb_tools["ccfix_exe"]), "fix",
+                                             str(cur), str(nxt), meth, "all"],
+                                            cwd=work5, timeout=300)
+                    iters.append({"method": meth, "rc": rc,
+                                  "log_tail": outc[-200:]})
+                    if rc != 0:
+                        break
+                    cur = nxt
+                ok5 = probe_ok(rc5, out5)
+                cur_out = cur if ok5 else None
+                trials5.append({"candidate": nm, "restored": rs,
+                                "iterations": iters, "final_rc": rc5,
+                                "runnable": bool(ok5),
+                                "output": str(cur_out) if cur_out else None,
+                                "output_tail": (out5 or "")[-400:]})
+            # winner = the runnable candidate that carries the MOST recovered
+            # bodies; a shell that opens but recovered almost nothing loses
+            win5 = max((t for t in trials5 if t["runnable"]),
+                       key=lambda t: (t["restored"] or 0), default=None)
+            runnable = win5 is not None
+            rc5 = win5["final_rc"] if win5 else (trials5[-1]["final_rc"]
+                                                 if trials5 else None)
+            out5 = win5["output_tail"] if win5 else (trials5[-1]["output_tail"]
+                                                     if trials5 else "")
+            iters = win5["iterations"] if win5 else []
+            src5_restored = (win5["restored"] or 0) if win5 else 0
+            if win5:
+                entry["stage5_input"] = win5["candidate"]
+                entry["stage5_input_restored"] = src5_restored
             # convergence note: when the same top frame repeats without a
             # cuttable caller, the blocker is inside the method body itself
             # (e.g. a call to a member the base module no longer has) - that
@@ -618,15 +907,28 @@ def main():
                 note = ("fixed point: top frame " + meths[-1] +
                         " repeats - its own body references a member the base "
                         "module lost; needs body-level merge")
-            stage5 = {"stage": "runnable-recovery", "iterations": iters,
+            stage5 = {"stage": "runnable-recovery", "trials": trials5,
+                      "iterations": iters,
                       "final_rc": rc5, "runnable": bool(runnable),
                       "convergence_note": note,
-                      "output_tail": out5[-400:]}
+                      "output_tail": out5}
             if runnable:
+                cur = Path(win5["output"])
                 entry["runnable_output"] = str(cur)
                 entry["sha256_runnable_output"] = sha256(cur)
-                if entry["result"] in ("incomplete", "slayer-clean", "necrobit-recovered"):
+                # HOW MUCH of the recovery is actually inside the runnable
+                # file? A runnable shell with 2 written bodies is not the same
+                # claim as a runnable merge carrying most of the dump, so the
+                # two get different result labels.
+                bodies = next((st.get("bodies") for st in entry["stages"]
+                               if st.get("stage") == "necrobit-jitdump"), None) or 0
+                entry["runnable_output_restored"] = src5_restored
+                entry["runnable_body_share"] = (round(src5_restored / bodies, 3)
+                                                if bodies else None)
+                if src5_restored and (not bodies or src5_restored / bodies >= 0.25):
                     entry["result"] = "run-recovered"
+                else:
+                    entry["result"] = "run-recovered-base-only"
             entry["stages"].append(stage5)
 
         if not args.keep_work:

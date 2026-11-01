@@ -94,7 +94,7 @@ class Program
                     // load-bearing; a bad cut there kills the whole run)
                     string noCut = Environment.GetEnvironmentVariable("NB_NOCUT_TYPE") ?? "";
                     if (noCut.Length > 0 && m.DeclaringType != null &&
-                        noCut.Split(',').Any(t => t.Trim() == m.DeclaringType.Name.String))
+                        noCut.Split(',').Any(nt => nt.Trim() == m.DeclaringType.Name.String))
                         continue;
                     foreach (var ins in m.Body.Instructions)
                         if (ins.OpCode == OpCodes.Call && ins.Operand is IMethod op &&

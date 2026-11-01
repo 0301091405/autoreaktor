@@ -127,10 +127,36 @@ PROJ = '''<Project Sdk="Microsoft.NET.Sdk">
 '''
 
 
-def sh(cmd, cwd, timeout=900):
-    r = subprocess.run([str(c) for c in cmd], cwd=str(cwd), timeout=timeout,
-                       capture_output=True)
-    return r.returncode, (r.stdout or b"") + (r.stderr or b"")
+def sh(cmd, cwd, timeout=900, env=None):
+    """Run a subprocess; on timeout take down its whole tree.
+
+    A blocked chain (e.g. a GUI target whose probe never returns) must not
+    leave the target running: Windows does not cascade termination, so killing
+    the python parent alone orphans `*-cleaned.exe` GUI children.
+    """
+    kw = {}
+    if os.name != "nt":
+        kw["start_new_session"] = True
+    p = subprocess.Popen([str(c) for c in cmd], cwd=str(cwd), env=env,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kw)
+    try:
+        out, _ = p.communicate(timeout=timeout)
+        return p.returncode, out or b""
+    except subprocess.TimeoutExpired:
+        try:
+            p.kill()
+            p.wait(timeout=10)
+        except Exception:
+            pass
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)],
+                           capture_output=True)
+        else:
+            try:
+                os.killpg(os.getpgid(p.pid), 9)
+            except Exception:
+                pass
+        return 124, b"TIMEOUT"
 
 
 def find_reactor():
@@ -174,6 +200,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--outdir", default=str(ROOT / "matrix_out"))
     ap.add_argument("--quick", action="store_true")
+    # --only filters cells by sample name (e.g. "con48x64"), so a single
+    # regression can be re-measured without paying for the whole grid.
+    ap.add_argument("--only", default=None,
+                    help="re-measure only cells whose sample name contains this")
     args = ap.parse_args()
     if sys.platform != "win32":
         print("matrix: Windows only")
@@ -193,6 +223,8 @@ def main():
     rows = []
     combos = []
     for (name, kind, tfm, platform) in SAMPLES:
+        if args.only and args.only not in name:
+            continue
         for fs in (["necro", "full"] if not args.quick else ["full"]):
             combos.append((name, kind, tfm, platform, fs))
     if args.quick:
@@ -234,8 +266,15 @@ def main():
             print("  pbase:", list(pbase.rglob("*"))[:8])
             continue
         t0 = time.time()
+        # AR_PROBE_ARGS puts the payload behind an argument so the behaviour
+        # oracle exercises a real code path (the corpus prints its mark only
+        # when handed "dump"); without it a candidate can print its banner and
+        # pass while still faulting on Main's argument branch.
+        chain_env = dict(os.environ)
+        chain_env.setdefault("AR_PROBE_ARGS", "dump")
         rc, log = sh([sys.executable, ROOT / "autoreaktor.py",
-                      str(target.parent), "--deep"], ROOT, timeout=1800)
+                      str(target.parent), "--deep"], ROOT, timeout=1800,
+                     env=chain_env)
         rep = target.parent / "_ar_out" / "report.json"
         entry = {}
         if rep.exists():
@@ -255,12 +294,34 @@ def main():
         print("  ->", entry.get("result"), "| restored:", entry.get("restored"),
               "| runnable:", entry.get("runnable"))
 
-    (outdir / "matrix.json").write_text(json.dumps(rows, indent=1), encoding="utf-8")
+    outfile = outdir / "matrix.json"
+
+    def _write(rs):
+        outfile.write_text(json.dumps(rs, indent=1), encoding="utf-8")
+
+    if args.only:
+        # Partial re-measure: keep every untouched cell from the previous
+        # grid instead of truncating the published matrix to one row.
+        try:
+            prev = json.loads(outfile.read_text(encoding="utf-8"))
+        except Exception:
+            prev = []
+        done = {r["cell"] for r in rows}
+        merged = list(rows)
+        for old in prev:
+            if old.get("cell") not in done:
+                merged.append(old)
+        order = {f"{n}|{f}": i for i, (n, _k, _t, _p) in enumerate(SAMPLES)
+                 for f in ("necro", "full")}
+        merged.sort(key=lambda r: order.get(r.get("cell"), 999))
+        _write(merged)
+    else:
+        _write(rows)
     print("\n=== MATRIX ===")
-    for r in rows:
+    for r in (merged if args.only else rows):
         print(f"  {r['cell']:24s} {r.get('result','?'):22s} "
               f"restored={r.get('restored')} runnable={r.get('runnable')}")
-    print(f"[matrix] written: {outdir / 'matrix.json'}")
+    print(f"[matrix] written: {outfile}")
     shutil.rmtree(work, ignore_errors=True)
     return 0
 

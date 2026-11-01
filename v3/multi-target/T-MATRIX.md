@@ -104,3 +104,59 @@ the NecroBit restore.
 Compressed variant (NecroBit_comp, `-compression 1`) recovers identically**: 268 bodies, 220/411 restored, 9 EH tables — 7.5.0.0 keeps the managed module on disk even compressed, so the chain needs no minidump route here. Coverage honest: 220/411 (failed=58 generics the runtime refuses to prepare) | report.json (rc per stage, sha256 in/out); first fully-automated end-to-end run on a fresh 7.5.0.0 demo target, zero env-var incantations |
 
 | T9 | verify_forms (own harness, WinForms net48 x86) | NecroBit + StringEnc + AntiTamper + AntiDebug + CFlow lvl9 + Obfuscation + ResourceEnc + AntiILDASM + HideCalls (Reactor 7.5.0.0 DEMO, form + textbox + button + click-secret) | `autoreaktor.py --deep` + HYBRID experiment (real-token bodies transplanted into the Slayer module via auto_stubmap) | **RECOVERED, runnable open**: chain recovered 264 bodies / 225-430 restored / 9 EH on the WinForms class; hybrid merge bound 184 real-token bodies into the Slayer module (which already carries decrypted strings). Stage-5 loop on the slayer output nops smethod_19 (antitamper) but then hits DECOY bodies (slayer's NecroBit decrypter cannot init on 7.x — its Main/ctor bodies are stubs); the hybrid fixes bodies but then fails on `Class3`1` runtime type-load — slayer's own half-rewritten generic helper (reflection GetTypes loads both files clean; the failure is runtime validation of slayer-damaged members, not our writes: generics are excluded from binding). Three permanent nbilmerge guards shipped from this mole-hunt: (1) clear MethodImplAttributes.Runtime when a real body replaces a decoy, (2) never write bodies onto delegate-declaring methods, (3) skip generic-declaring types until locals carry real types. Next: hybrid base for stage 4 + cctor line-surgery that keeps the strenc table init while cutting the Class3`1 loader path | report.json + hybrid run logs |
+
+## Correction — x64 re-measured end to end (7.5.0.0 DEMO, console corpus)
+
+The x64-runnable architecture guessed in T8 ("original-base merge + NecroBit
+runtime table-init preservation") was tested and **rejected by measurement**.
+Findings, all reproducible with `tools/matrix.py` plus `ilverify`:
+
+1. **The x64 hook itself is best-effort, but the x64 leg is now stable.**
+   `clrjit_dump64.dll` was never installing: it gated its framework-path
+   `clrjit.dll` load on `GetModuleHandleW("clr.dll")`, but the injection APC
+   runs while only `mscoree.dll` is mapped. Switching the gate to
+   `mscoree.dll` made it install once (`HOOK-OK`, 244 bodies) but also made
+   it crash the target (`0xC0000005`) on repeats, because it force-loaded a
+   not-yet-initialised JIT that early. The gate is therefore back on
+   `clr.dll`: the hook waits for the process's real engine and the deferred
+   thread retries until the CLR loads its own `clrjit.dll`. Body coverage on
+   x64 does not depend on it - the `--force` `forcedump` companion walks every
+   MethodDef with `PrepareMethod` inside the process and writes the bodies
+   itself: **270 bodies**, target exit 0, identical over 4 repeats, and two
+   independent full matrix re-measures (`251` restored in `full`). The
+   marker still reports `getJit() -> null` on this host, which is why the
+   hook is documented as optional coverage rather than the basis of the
+   numbers.
+
+2. **The body merge does not damage IL.** `ilverify` on the pristine
+   protected module and on the 254-body `original`-base merge reports *the
+   same* errors (the module's own baseline noise: two `ThisUninitReturn` in
+   packer ctors and one `ExpectedArray` in the string decrypter). The earlier
+   "StackUnderflow in transplanted Main" note was measured against a
+   different artefact and is withdrawn. A full IL diff needs
+   `-e <decrypter-method>`, because ILVerify itself crashes
+   (`EcmaType` -> `ArrayType` InvalidCast) on that decrypter's `ldelema`.
+
+3. **The real blocker is the packer's VM, not the merge.** Re-running
+   `nbilmerge` with **no bodies written at all**
+   (`NB_NOBODY=1 NB_NOSIL=1`) still produces a PE that faults in
+   `<Module>.cctor` -> `z6JSeIph3dAjYQL58H.<vm-entry>()`:
+   `BadImageFormatException` on the real CLR, `TypeInitializationException`
+   under mono. So a dnlib PE rewrite by itself breaks NecroBit's VM, which
+   reads its own image by offset. No amount of `ccfix` cutting fixes that -
+   the feedback loop only removes the init together with the check
+   (the v44 "blunt ret kills both" finding), and after cutting the VM entry
+   the next frame just faults elsewhere.
+
+4. **The cells that run are base-only.** With a behaviour oracle (the
+   protected binary's own stdout, under the same `AR_PROBE_ARGS`) the
+   runnable outputs for the console cells are `de4dot`'s cleaned module and
+   the Slayer-derived shell - both of which reproduce the payload marker
+   (`MK-<name>-7E5`). On this corpus `de4dot` alone already yields a
+   runnable, behaviour-matching module, so the NecroBit leg is not what makes
+   the cells green. The honest label is `run-recovered-base-only`.
+
+5. **Consequence for the roadmap.** The remaining work is an
+   offset-preserving body write (in-place IL replacement with no metadata or
+   section relocation) so the packer's self-referential reads still line up -
+   not more whole-method cuts.

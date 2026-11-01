@@ -119,17 +119,75 @@ python tools/matrix.py --quick    # one flag-set per shape
 
 Requires Windows, the .NET SDK and the .NET Reactor demo console
 (auto-discovered; or point `REACTOR_CONSOLE` at it). Cells report the honest
-result class per sample — `run-recovered`, `necrobit-recovered`,
-`slayer-clean`, ... — so regressions and open classes are visible, never
-hidden. First published grid (7.5.0.0 demo, all cells full flags):
+result class per sample — `run-recovered`, `run-recovered-base-only`,
+`necrobit-recovered`, `slayer-clean`, ... — so regressions and open classes
+are visible, never hidden. `run-recovered` means the runnable output carries
+the recovered bodies; `run-recovered-base-only` means a runnable output
+exists but it is a *base* (de4dot-cleaned / Slayer-derived shell) whose
+bodies were never NecroBit-recovered, so the recovery claim does not cover
+it. The full published grid (7.5.0.0 demo, both flag sets, fresh run —
+`matrix_out/matrix.json`):
 
-| cell | result | restored | runnable |
-|---|---|---|---|
-| console net48 x86 | run-recovered | 220 | yes |
-| console net48 x64 | necrobit-recovered | 220/386 | no (stage-5 x64 iterations open) |
-| console net8 (anycpu) | slayer-clean | 230 | no |
-| console + generics/delegates net48 x86 | run-recovered | 221 | yes |
-| WinForms net48 x86 | slayer-clean | 225 | no |
+| cell | result | restored | bodies | runnable |
+|---|---|---|---|---|
+| console net48 x86 \| necro | run-recovered-base-only | — | — | yes |
+| console net48 x86 \| full | run-recovered-base-only | 254 | 259 | yes |
+| console net48 x64 \| necro | run-recovered-base-only | 167 | 167 | yes |
+| console net48 x64 \| full | run-recovered-base-only | 251 | 270 | yes |
+| console net8 anycpu \| necro | slayer-clean | 171 | 171 | no |
+| console net8 anycpu \| full | slayer-clean | 223 | 231 | no |
+| console+generics net48 x86 \| necro | run-recovered-base-only | 171 | 181 | yes |
+| console+generics net48 x86 \| full | run-recovered-base-only | 255 | 258 | yes |
+| WinForms net48 x86 \| necro | run-recovered-base-only | 171 | 182 | yes |
+| WinForms net48 x86 \| full | run-recovered-base-only | 259 | 264 | yes |
+
+### Why the matrix cells are `run-recovered-base-only`, measured not assumed
+
+The verdict is produced by a **behaviour oracle**, not a marker-text or
+exit-code guess: the protected binary is executed first under the same
+arguments, and a candidate counts as recovered only if the OS exit status is
+free of an exception *and* it reproduces every non-empty stdout line the
+protected original printed. A blocking (GUI) target is recognised from the
+reference run itself — it never exits, so it is judged on staying alive, with
+a short grace window instead of a full console timeout per candidate. Under
+that test the console cells do not reach a body-based recovery, and the
+measurements say why:
+
+* **The body-rich merge cannot run at all in this corpus.** Writing the dumped
+  bodies into the pristine protected module yields a PE that faults in
+  `<Module>.cctor` (the Reactor VM entry) — on x86 as well as x64, which is
+  why the x86 console cell is `run-recovered-base-only` too. The control
+  experiment separates cause from suspicion: running `nbilmerge` with
+  **zero** bodies written (`NB_NOBODY=1 NB_NOSIL=1`) *still* faults in the
+  same place, so dnlib's PE rewrite by itself is enough to break NecroBit's
+  VM, which reads its own image by offset. Recovery into the pristine
+  original is therefore blocked by the packer's self-referential VM, not by
+  the body merge.
+* **IL is not the problem.** `ilverify` reports *exactly the same* errors for
+  the pristine protected module and for the 254-body merge (the module's own
+  baseline noise) — the write-back does not degrade IL validity. (A full IL
+  diff needs `-e <decrypter-method>`: ILVerify itself throws
+  `EcmaType -> ArrayType` on that decrypter's `ldelema`.)
+* **The cells that run are base-only.** The modules that pass the oracle are
+  `de4dot`'s cleaned output and the Slayer-derived shell, whose bodies are
+  already decrypted statically. On this corpus `de4dot` alone produces a
+  runnable, behaviour-matching module, so the NecroBit leg is not what makes
+  these cells green.
+* **The x64 leg no longer depends on the fragile hook.** The old failure mode
+  was self-inflicted: the hook forced `LoadLibraryW` of the framework
+  `clrjit.dll` at DLL-attach time (inside the injection APC, when only
+  `mscoree.dll` is mapped). On x64 that either returned a not-yet-initialised
+  JIT (`getJit() -> null`) or killed the target with `0xC0000005` before any
+  body was written. The gate is back on `clr.dll` — the framework engine the
+  process will have once it is really up — and the retry loop waits for the
+  CLR's own JIT. Body coverage on x64 comes from the `--force` companion
+  (`forcedump`, a `PrepareMethod` walk inside the process), which needs no
+  JIT hook: measured **270 bodies** on `con48x64` with the target exiting 0.
+  Repeating the dump 4× gave 270/0-exit every time, and two independent full
+  matrix re-measures produced 270 bodies and 251 restored bodies in the `full`
+  cell. The hook itself still reports `getJit() -> null` on this host, so it
+  is documented as *optional coverage*, not as the mechanism the numbers rest
+  on.
 
 ## Machinery self-test
 
