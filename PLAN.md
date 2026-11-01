@@ -20,21 +20,57 @@ This document tracks the recovery roadmap, completed architectural fixes, and mo
    - Base64 inert snapshots (`NB_B64_OUT`) written *before* PE serialization to survive Windows Defender quarantine.
    - Robust process tree termination (`kill_tree` with `taskkill /F /T` on Windows) to prevent orphaned GUI processes.
 
-4. **String Literal Re-binding (`NB_LDSTRMAP`)**
-   - Added string map ingestion (`gen_ldstrmap.cs` + `nbilmerge.cs` US heap rewriter) to recover encrypted literals.
+4. **String Literal Re-binding (`NB_LDSTRMAP`)** — *consumer only, no producer yet*
+   - `nbilmerge.cs` can ingest a `token=literal` map and write the literals into
+     the output US heap, and `auto_stubmap.py` now forwards the variable (the
+     merge is normally driven through it, so without forwarding the consumer
+     was unreachable).
+   - **There is no generator.** Producing the map requires running the
+     packer's own string decrypter; that is not implemented, so in practice the
+     map is always empty and no string has been recovered by this route. An
+     earlier `gen_ldstrmap` stub was deleted rather than left in the tree
+     pretending to work.
 
 ---
 
 ## Active Phase: Modular Passes (`Passes/`)
 
-Refactoring `nbilmerge.cs` from a monolithic script into structured domain-specific passes:
-- **`Passes/AntiDebugPass.cs`**: Automated removal/neutralization of anti-debugging checks (`Debugger.IsAttached`, timing checks).
-- **`Passes/ProxyCallPass.cs`**: Inlining and resolution of proxy method calls (proxy delegate stubs).
-- **`Passes/TamperPass.cs`**: Neutralization of integrity/tamper checks in module cctors.
+`nbilmerge.cs` now calls three passes after the body write-back:
+- **`Passes/AntiDebugPass.cs`**: rewrites `Debugger.get_IsAttached` calls to `ldc.i4.0`.
+- **`Passes/ProxyCallPass.cs`**: two-phase — collect one-call stubs, then retarget
+  `call`/`callvirt`/`ldftn` operands at the real target.
+- **`Passes/TamperPass.cs`**: rewrites `throw` in `<Module>.cctor` to `ret` and
+  nops calls to `smethod_*`/`Class3*` helpers.
 
----
+Measured caveat: these are pattern passes with no test target of their own.
+`AntiDebugPass` matches the managed `Debugger` property; Reactor's anti-debug is
+mostly native/unmanaged, so a zero count is the expected result on this corpus,
+not a failure. `TamperPass` is off by default in the pipeline (`NB_ATKILL`
+opt-in) and its `Class3` name match was derived from an older sample.
+
+## Known gap: generic-declaring types
+
+`nbilmerge.cs` skips every method whose declaring type has generic parameters
+("generic types load-validate every member; a body written with Object-only
+locals can fail that check"). Measured on `con48x64` (7.5.0.0 demo):
+
+- the protected module contains exactly **one** generic type,
+  `.../fFeHXD5jGvWG4hfURs0/YdkCTU5h0ANEMgBcfNi<BXMso55QofondnoEPXl>`,
+  a nested attribute helper with 4 methods (`.ctor`, `.cctor`,
+  `BkXgT4XQdFEapb0BZnj`, `l0FbJaX1gsoBlb3e8CC`);
+- the merge log confirms the guard firing on it (`[skip] generic: ...`), so
+  those 4 bodies stay decoys while 254 other bodies are restored.
+
+So the "generics" item is real but narrow: one type, four methods, in this
+corpus. The `Class3`1` name quoted in `v3/multi-target/T-MATRIX.md` T9 does not
+exist in the current 7.5 samples (`Class3` appears 0 times), so that specific
+claim is stale and should not be used as the target of new work.
 
 ## Future Phases
 
-- **Hybrid T9 Stabilization**: Full integration of real-token bodies into the cleaned/unpacked Slayer base with automated generics/type-load validation.
-- **Full Matrix CI Enforcement**: Complete green run across all 10 target cells (`matrix.json`).
+- **T9 hybrid re-measurement**: the T9 row cites `report.json` + hybrid run
+  logs, and neither artifact is in the repository — the claim cannot be
+  reproduced from this checkout. Re-running the hybrid on `verify_forms` and
+  storing the log is the prerequisite for any further T9 work.
+- **Full Matrix CI Enforcement**: complete green run across all 10 cells
+  (`matrix_out/matrix.json`).

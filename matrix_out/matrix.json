@@ -5,31 +5,23 @@
   "restored": null,
   "bodies": null,
   "runnable": true,
-  "secs": 494.6
+  "secs": 156.3
  },
  {
   "cell": "con48x86|full",
   "result": "run-recovered-base-only",
   "restored": 254,
-  "bodies": 259,
+  "bodies": 258,
   "runnable": true,
-  "secs": 740.4
- },
- {
-  "cell": "con48x64|necro",
-  "result": "run-recovered-base-only",
-  "restored": 167,
-  "bodies": 167,
-  "runnable": true,
-  "secs": 19399.7
+  "secs": 439.7
  },
  {
   "cell": "con48x64|full",
   "result": "run-recovered-base-only",
-  "restored": 251,
-  "bodies": 270,
+  "restored": null,
+  "bodies": 0,
   "runnable": true,
-  "secs": 904.6
+  "secs": 367.7
  },
  {
   "cell": "con8|necro",
@@ -37,7 +29,7 @@
   "restored": 171,
   "bodies": 171,
   "runnable": false,
-  "secs": 335.2
+  "secs": 275.0
  },
  {
   "cell": "con8|full",
@@ -45,15 +37,7 @@
   "restored": 223,
   "bodies": 231,
   "runnable": false,
-  "secs": 384.3
- },
- {
-  "cell": "gen48x86|necro",
-  "result": "run-recovered-base-only",
-  "restored": 171,
-  "bodies": 181,
-  "runnable": true,
-  "secs": 712.5
+  "secs": 355.2
  },
  {
   "cell": "gen48x86|full",
@@ -61,15 +45,7 @@
   "restored": 255,
   "bodies": 258,
   "runnable": true,
-  "secs": 688.6
- },
- {
-  "cell": "forms48x86|necro",
-  "result": "run-recovered-base-only",
-  "restored": 171,
-  "bodies": 182,
-  "runnable": true,
-  "secs": 402.6
+  "secs": 477.1
  },
  {
   "cell": "forms48x86|full",
@@ -77,6 +53,6 @@
   "restored": 259,
   "bodies": 264,
   "runnable": true,
-  "secs": 430.6
+  "secs": 617.4
  }
 ]

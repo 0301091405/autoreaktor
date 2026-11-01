@@ -99,6 +99,12 @@ def _trial_merge(target, dumpdir, out_path, b64_path=None, keep_out=False):
     """
     env = dict(os.environ)
     env['NB_STUBMAPTOK'] = ';'.join(build_pairs(dumpdir))
+    # Pass a caller-supplied ldstr map through to nbilmerge (it reads
+    # NB_LDSTRMAP itself). Without this the consumer below is unreachable
+    # whenever the merge is driven through auto_stubmap, which is the normal
+    # path. Nothing is generated here: producing the map needs a decrypter.
+    if 'NB_LDSTRMAP' in os.environ:
+        env['NB_LDSTRMAP'] = os.environ['NB_LDSTRMAP']
     if b64_path:
         env['NB_B64_OUT'] = b64_path
     if keep_out:
